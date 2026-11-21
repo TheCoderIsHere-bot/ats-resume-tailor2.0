@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
 
 :root {
@@ -23,4 +24,85 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Plus Jakarta Sans override */
+.font-sans {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+}
+
+/* Animations */
+@keyframes breathe {
+  0%, 100% { transform: scale(1); opacity: .3; }
+  50% { transform: scale(1.15); opacity: .6; }
+}
+.animate-breathe {
+  animation: breathe 5s ease-in-out infinite;
+}
+
+@keyframes gentleFade {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-gentle {
+  animation: gentleFade .6s ease-out forwards;
+}
+
+@keyframes textFade {
+  0% { opacity: 0; filter: blur(4px); }
+  20% { opacity: 1; filter: blur(0); }
+  80% { opacity: 1; filter: blur(0); }
+  100% { opacity: 0; filter: blur(4px); }
+}
+.animate-text-fade {
+  animation: textFade 2.5s ease-in-out forwards;
+}
+
+@keyframes textHold {
+  0% { opacity: 0; filter: blur(4px); }
+  30% { opacity: 1; filter: blur(0); }
+  100% { opacity: 1; filter: blur(0); }
+}
+.animate-text-hold {
+  animation: textHold 1s ease-out forwards;
+}
+
+@keyframes skipAppear {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.animate-skip-appear {
+  animation: skipAppear .5s ease-out 3s forwards;
+}
+
+@keyframes menuOpen {
+  from { opacity: 0; transform: scale(0.95) translateY(-4px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+.animate-menu {
+  animation: menuOpen 0.15s ease-out forwards;
+  transform-origin: top right;
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-slide-down {
+  animation: slideDown 0.15s ease-out forwards;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #E5E7EB;
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #D1D5DB;
 }

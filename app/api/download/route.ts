@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    const pdfBytes = generatePdf(markdown, filename);
+    const pdfBytes = await generatePdf(markdown);
     return new NextResponse(Buffer.from(pdfBytes), {
       status: 200,
       headers: {

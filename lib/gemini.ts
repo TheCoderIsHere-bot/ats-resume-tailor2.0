@@ -21,8 +21,6 @@ OUTPUT FORMAT:
 Return ONLY a valid JSON object with exactly these keys:
 - "tailored_resume": a string containing the full tailored resume in Markdown
 - "cover_letter": a string containing the cover letter in Markdown
-- "ats_score": a number from 0 to 100 representing how well the tailored resume matches the job description (consider keyword coverage, experience alignment, and skills match)
-- "matched_keywords": an array of strings listing the key terms from the job description that were successfully integrated into the tailored resume
 - "job_title": a string containing the job title extracted from the job description
 - "company_name": a string containing the company name extracted from the job description
 
@@ -31,8 +29,6 @@ Do not include any text before or after the JSON object.`;
 interface GenerationResult {
   tailored_resume: string;
   cover_letter: string;
-  ats_score: number;
-  matched_keywords: string[];
   job_title: string;
   company_name: string;
 }
@@ -71,9 +67,6 @@ Return the JSON object now:`;
     throw new Error('Invalid response structure from AI');
   }
 
-  // Safe defaults for new fields
-  parsed.ats_score = typeof parsed.ats_score === 'number' ? Math.min(100, Math.max(0, Math.round(parsed.ats_score))) : 0;
-  parsed.matched_keywords = Array.isArray(parsed.matched_keywords) ? parsed.matched_keywords : [];
   parsed.job_title = parsed.job_title || 'Untitled Role';
   parsed.company_name = parsed.company_name || 'Unknown Company';
 
