@@ -27,11 +27,10 @@ export async function POST(request: NextRequest) {
     let text = '';
 
     if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
-      // pdf-parse is in serverExternalPackages so it loads from node_modules directly
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const pdfParse = require('pdf-parse');
-      const data = await pdfParse(buffer);
-      text = data.text;
+      // unpdf: serverless-safe PDF parser (no canvas/native deps, works on Vercel)
+      const { extractText } = await import('unpdf');
+      const { text: extractedText } = await extractText(new Uint8Array(buffer), { mergePages: true });
+      text = extractedText;
     } else if (
       file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
       file.name.endsWith('.docx')
