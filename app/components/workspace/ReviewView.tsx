@@ -10,7 +10,7 @@ import { AtsScoreCard } from './AtsScoreCard';
 export function ReviewView() {
   const {
     activeTab, setActiveTab, currentGeneration,
-    atsScore, scoreBefore, scoreBreakdown, matchedKeywords, missedKeywords,
+    atsScore, scoreBefore, scoreBreakdown, matchedKeywords, missedKeywords, scoreLoading,
     setAppState, setCurrentGeneration, setAtsScore, setScoreBefore, setScoreBreakdown,
     setMatchedKeywords, setMissedKeywords, setError,
   } = useApp();
@@ -252,6 +252,7 @@ export function ReviewView() {
             scoreBreakdown={scoreBreakdown}
             matchedKeywords={matchedKeywords}
             missedKeywords={missedKeywords}
+            isLoading={scoreLoading}
           />
           <div className={`max-w-4xl mx-auto bg-white ${theme.roundedSoft} ${theme.shadowSoft} p-6 sm:p-10 md:p-16 min-h-full relative`}>
             {isEditing && (

@@ -15,6 +15,7 @@ export interface WorkspaceContextValue {
   scoreBreakdown: ATSScoreBreakdown | null; // full breakdown for display
   matchedKeywords: string[];
   missedKeywords: string[];
+  scoreLoading: boolean;
   processingStep: number;
   apiResolved: boolean;
   stepAnimKey: number;
@@ -33,6 +34,7 @@ export interface WorkspaceContextValue {
   setScoreBreakdown: (b: ATSScoreBreakdown | null) => void;
   setMatchedKeywords: (kw: string[]) => void;
   setMissedKeywords: (kw: string[]) => void;
+  setScoreLoading: (b: boolean) => void;
   setProcessingStep: (n: number) => void;
   setApiResolved: (b: boolean) => void;
   setStepAnimKey: React.Dispatch<React.SetStateAction<number>>;
@@ -60,6 +62,7 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const [scoreBreakdown, setScoreBreakdown] = useState<ATSScoreBreakdown | null>(null);
   const [matchedKeywords, setMatchedKeywords] = useState<string[]>([]);
   const [missedKeywords, setMissedKeywords] = useState<string[]>([]);
+  const [scoreLoading, setScoreLoading] = useState(false);
   const [processingStep, setProcessingStep] = useState(0);
   const [apiResolved, setApiResolved] = useState(false);
   const [stepAnimKey, setStepAnimKey] = useState(0);
@@ -70,11 +73,11 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const isReadyToCraft = useMemo(() => resumeReady && jdText.length > 10, [resumeReady, jdText]);
 
   const value = useMemo<WorkspaceContextValue>(() => ({
-    resumeFile, jdText, activeTab, currentGeneration, atsScore, scoreBefore, scoreBreakdown, matchedKeywords, missedKeywords, processingStep, apiResolved, stepAnimKey, loopCount, lastCraftInputs,
+    resumeFile, jdText, activeTab, currentGeneration, atsScore, scoreBefore, scoreBreakdown, matchedKeywords, missedKeywords, scoreLoading, processingStep, apiResolved, stepAnimKey, loopCount, lastCraftInputs,
     resumeReady, isReadyToCraft,
-    setResumeFile, setJdText, setActiveTab, setCurrentGeneration, setAtsScore, setScoreBefore, setScoreBreakdown, setMatchedKeywords, setMissedKeywords, setProcessingStep, setApiResolved, setStepAnimKey, setLoopCount, setLastCraftInputs
+    setResumeFile, setJdText, setActiveTab, setCurrentGeneration, setAtsScore, setScoreBefore, setScoreBreakdown, setMatchedKeywords, setMissedKeywords, setScoreLoading, setProcessingStep, setApiResolved, setStepAnimKey, setLoopCount, setLastCraftInputs
   }), [
-    resumeFile, jdText, activeTab, currentGeneration, atsScore, scoreBefore, scoreBreakdown, matchedKeywords, missedKeywords, processingStep, apiResolved, stepAnimKey, loopCount, lastCraftInputs,
+    resumeFile, jdText, activeTab, currentGeneration, atsScore, scoreBefore, scoreBreakdown, matchedKeywords, missedKeywords, scoreLoading, processingStep, apiResolved, stepAnimKey, loopCount, lastCraftInputs,
     resumeReady, isReadyToCraft
   ]);
 

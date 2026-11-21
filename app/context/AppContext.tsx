@@ -42,7 +42,7 @@ function AppActionsProvider({ children }: { children: React.ReactNode }) {
   const { setAppState, setCurrentView, setShowLoginModal, setShowPaywall, setError } = useUI();
   const {
     resumeFile, jdText, setResumeFile, setJdText, setActiveTab, setCurrentGeneration,
-    setAtsScore, setScoreBefore, setScoreBreakdown, setMatchedKeywords, setMissedKeywords, setProcessingStep, setApiResolved,
+    setAtsScore, setScoreBefore, setScoreBreakdown, setMatchedKeywords, setMissedKeywords, setScoreLoading, setProcessingStep, setApiResolved,
     setStepAnimKey, setLoopCount, lastCraftInputs, setLastCraftInputs, apiResolved, currentGeneration
   } = useWorkspace();
 
@@ -153,8 +153,37 @@ function AppActionsProvider({ children }: { children: React.ReactNode }) {
     setCurrentGeneration(gen);
     setAtsScore(null); setScoreBefore(null); setScoreBreakdown(null);
     setMatchedKeywords([]); setMissedKeywords([]);
+    setScoreLoading(true);
     setCurrentView('workspace'); setAppState('review'); setActiveTab('resume');
-  }, [setCurrentGeneration, setAtsScore, setScoreBefore, setScoreBreakdown, setMatchedKeywords, setMissedKeywords, setCurrentView, setAppState, setActiveTab]);
+
+    // Trigger on-demand scoring for the archived generation
+    fetch('/api/score', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        resumeText: gen.tailored_resume,
+        jobDescription: gen.job_description,
+      }),
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && typeof data.score === 'number') {
+          setAtsScore(data.score);
+          setScoreBreakdown(data.breakdown ?? null);
+          setMatchedKeywords(data.matchedKeywords ?? []);
+          setMissedKeywords(data.missedKeywords ?? []);
+        } else {
+          setAtsScore(null);
+        }
+      })
+      .catch((err) => {
+        console.warn('Failed to score archived generation:', err);
+        setAtsScore(null);
+      })
+      .finally(() => {
+        setScoreLoading(false);
+      });
+  }, [setCurrentGeneration, setAtsScore, setScoreBefore, setScoreBreakdown, setMatchedKeywords, setMissedKeywords, setScoreLoading, setCurrentView, setAppState, setActiveTab]);
 
   return (
     <AppActionsContext.Provider value={{ handleLogout, handleCraft, handleRetry, handleSkipMindful, openArchiveItem }}>

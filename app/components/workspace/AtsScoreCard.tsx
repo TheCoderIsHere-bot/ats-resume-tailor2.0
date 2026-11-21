@@ -11,6 +11,7 @@ interface AtsScoreCardProps {
   scoreBreakdown: ATSScoreBreakdown | null;
   matchedKeywords: string[];
   missedKeywords: string[];
+  isLoading?: boolean;
 }
 
 function ScoreRing({ score, size = 80, label }: { score: number; size?: number; label?: string }) {
@@ -47,8 +48,28 @@ export function AtsScoreCard({
   scoreBreakdown,
   matchedKeywords,
   missedKeywords,
+  isLoading,
 }: AtsScoreCardProps) {
   const [expanded, setExpanded] = useState(false);
+
+  // If score is calculating
+  if (isLoading) {
+    return (
+      <div className="max-w-4xl mx-auto mb-6">
+        <div className={`${theme.bgSurface} ${theme.roundedSoft} ${theme.shadowSoft} p-5 flex items-center gap-4 animate-pulse`}>
+          <div className="p-2.5 rounded-full bg-[#8AA694]/10 flex-shrink-0">
+            <TrendingUp size={18} className="text-[#8AA694] animate-pulse" />
+          </div>
+          <div>
+            <p className="text-sm font-medium text-[#333333]">Analyzing Job Match Score...</p>
+            <p className="text-xs text-[#6B7280] mt-0.5">
+              Evaluating tailored resume keywords against the job requirements.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   // If score is null, the JD didn't have enough keywords to score reliably
   if (atsScore === null) {
