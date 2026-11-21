@@ -4,8 +4,6 @@ export function createClient() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? '';
   const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '';
 
-  console.log('[Supabase] url:', url.slice(0, 30), 'key len:', key.length);
-
   if (!url || !url.startsWith('http') || !key || key.length < 20) {
     // Return a no-op stub during build/SSR when env vars aren't set
     return {

@@ -27,12 +27,12 @@ export async function POST(request: NextRequest) {
     let text = '';
 
     if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
+      // pdf-parse: simple function call, NOT a class constructor
+      // Use the lib path directly to avoid Vercel test-file filesystem errors
       // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const { PDFParse } = require('pdf-parse');
-      const parser = new PDFParse({ data: new Uint8Array(buffer) });
-      const result = await parser.getText({ pageJoiner: '' });
-      text = result.text;
-      await parser.destroy();
+      const pdfParse = require('pdf-parse/lib/pdf-parse');
+      const data = await pdfParse(buffer);
+      text = data.text;
     } else if (
       file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
       file.name.endsWith('.docx')
