@@ -151,10 +151,25 @@ function AppActionsProvider({ children }: { children: React.ReactNode }) {
 
   const openArchiveItem = useCallback((gen: Generation) => {
     setCurrentGeneration(gen);
+    setCurrentView('workspace');
+    setAppState('review');
+    setActiveTab('resume');
+
+    // If scores were already saved with this generation, display them immediately!
+    if (gen.ats_score !== undefined && gen.ats_score !== null) {
+      setAtsScore(gen.ats_score);
+      setScoreBefore(gen.score_before ?? null);
+      setScoreBreakdown(gen.score_breakdown ?? null);
+      setMatchedKeywords(gen.matched_keywords ?? []);
+      setMissedKeywords(gen.missed_keywords ?? []);
+      setScoreLoading(false);
+      return;
+    }
+
+    // Fallback: only for old legacy generations created before score saving
     setAtsScore(null); setScoreBefore(null); setScoreBreakdown(null);
     setMatchedKeywords([]); setMissedKeywords([]);
     setScoreLoading(true);
-    setCurrentView('workspace'); setAppState('review'); setActiveTab('resume');
 
     // Trigger on-demand scoring for the archived generation
     fetch('/api/score', {

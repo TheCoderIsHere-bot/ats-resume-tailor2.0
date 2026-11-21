@@ -1,3 +1,5 @@
+import type { ATSScoreBreakdown } from './ats-score';
+
 export interface Generation {
   id: string;
   job_description: string;
@@ -6,6 +8,11 @@ export interface Generation {
   created_at: string;
   job_title?: string;
   company_name?: string;
+  ats_score?: number | null;
+  score_before?: number | null;
+  score_breakdown?: ATSScoreBreakdown | null;
+  matched_keywords?: string[];
+  missed_keywords?: string[];
 }
 
 export interface Transaction {

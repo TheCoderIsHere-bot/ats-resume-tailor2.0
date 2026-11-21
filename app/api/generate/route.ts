@@ -81,19 +81,41 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Insufficient tokens' }, { status: 402 });
     }
 
-    // 8. Save generation to DB
-    const { data: generation, error: genError } = await supabase
+    // 8. Save generation to DB (with persistent scores)
+    const basePayload = {
+      user_id: user.id,
+      job_description: jobDescription,
+      tailored_resume,
+      cover_letter,
+      job_title,
+      company_name,
+    };
+
+    const fullPayload = {
+      ...basePayload,
+      ats_score: scoreAfter?.score ?? null,
+      score_before: scoreBefore?.score ?? null,
+      score_breakdown: scoreAfter?.breakdown ?? null,
+      matched_keywords: scoreAfter?.matchedKeywords ?? [],
+      missed_keywords: scoreAfter?.missedKeywords ?? [],
+    };
+
+    let { data: generation, error: genError } = await supabase
       .from('generations')
-      .insert({
-        user_id: user.id,
-        job_description: jobDescription,
-        tailored_resume,
-        cover_letter,
-        job_title,
-        company_name,
-      })
+      .insert(fullPayload)
       .select()
       .single();
+
+    // Fallback if score columns have not been added yet in Supabase
+    if (genError && (genError.message?.includes('column') || genError.code === '42703')) {
+      const fallback = await supabase
+        .from('generations')
+        .insert(basePayload)
+        .select()
+        .single();
+      generation = fallback.data;
+      genError = fallback.error;
+    }
 
     if (genError || !generation) {
       console.error('DB insert error:', genError);
@@ -102,7 +124,14 @@ export async function POST(request: NextRequest) {
     }
 
     return NextResponse.json({
-      generation,
+      generation: {
+        ...generation,
+        ats_score: scoreAfter?.score ?? null,
+        score_before: scoreBefore?.score ?? null,
+        score_breakdown: scoreAfter?.breakdown ?? null,
+        matched_keywords: scoreAfter?.matchedKeywords ?? [],
+        missed_keywords: scoreAfter?.missedKeywords ?? [],
+      },
       score_before: scoreBefore?.score ?? null,
       score_after: scoreAfter?.score ?? null,
       score_breakdown: scoreAfter?.breakdown ?? null,
