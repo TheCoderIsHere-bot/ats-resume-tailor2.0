@@ -1,6 +1,11 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+// Lazy singleton — instantiated at request time, not at module evaluation / build time
+let _genAI: GoogleGenerativeAI | null = null;
+function getGenAI(): GoogleGenerativeAI {
+  if (!_genAI) _genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+  return _genAI;
+}
 
 const SYSTEM_PROMPT = `You are an elite technical recruiter and ATS optimization expert. Your task is to tailor a candidate's resume to match a specific job description.
 
@@ -37,7 +42,7 @@ export async function generateTailoredContent(
   resumeText: string,
   jobDescription: string
 ): Promise<GenerationResult> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+  const model = getGenAI().getGenerativeModel({ model: 'gemini-2.5-flash' });
 
   const prompt = `${SYSTEM_PROMPT}
 

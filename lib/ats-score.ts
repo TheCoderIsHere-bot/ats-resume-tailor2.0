@@ -14,7 +14,12 @@
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+// Lazy singleton — instantiated at request time, not at module evaluation / build time
+let _genAI: GoogleGenerativeAI | null = null;
+function getGenAI(): GoogleGenerativeAI {
+  if (!_genAI) _genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+  return _genAI;
+}
 
 // ─── Types ────────────────────────────────────────────────────
 
@@ -64,7 +69,7 @@ Rules:
 - Return only the JSON object, no other text`;
 
 export async function extractJDKeywords(jdText: string): Promise<JDKeywords> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
+  const model = getGenAI().getGenerativeModel({ model: 'gemini-2.5-flash' });
   const prompt = `${EXTRACTION_PROMPT}\n\nJOB DESCRIPTION:\n${jdText}`;
 
   const result = await model.generateContent(prompt);
