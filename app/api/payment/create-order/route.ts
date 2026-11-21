@@ -5,13 +5,14 @@ import Razorpay from 'razorpay';
 const TOKENS_PER_BUNDLE = 10;
 const PRICE_INR = 25000; // ₹250 in paise
 
-const razorpay = new Razorpay({
-  key_id: process.env.RAZORPAY_KEY_ID!,
-  key_secret: process.env.RAZORPAY_KEY_SECRET!,
-});
-
 export async function POST(request: NextRequest) {
   try {
+    // Initialize inside handler so env vars are available at runtime, not build time
+    const razorpay = new Razorpay({
+      key_id: process.env.RAZORPAY_KEY_ID!,
+      key_secret: process.env.RAZORPAY_KEY_SECRET!,
+    });
+
     const supabase = await createClient();
 
     const { data: { user }, error: authError } = await supabase.auth.getUser();
