@@ -27,10 +27,9 @@ export async function POST(request: NextRequest) {
     let text = '';
 
     if (file.type === 'application/pdf' || file.name.endsWith('.pdf')) {
-      // pdf-parse: simple function call, NOT a class constructor
-      // Use the lib path directly to avoid Vercel test-file filesystem errors
+      // pdf-parse is in serverExternalPackages so it loads from node_modules directly
       // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const pdfParse = require('pdf-parse/lib/pdf-parse');
+      const pdfParse = require('pdf-parse');
       const data = await pdfParse(buffer);
       text = data.text;
     } else if (
