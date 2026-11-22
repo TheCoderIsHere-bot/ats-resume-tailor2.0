@@ -19,6 +19,7 @@ RULES:
 - Rewrite the "Professional Summary" to align heavily with the tone and requirements of the Job Description.
 - Seamlessly integrate exact keywords from the Job Description into the bullet points.
 - If the context of the existing experience supports it, reframe bullet points to emphasize the most relevant skills and outcomes for the target role.
+- HIGHLIGHT ALL TWEAKS & KEYWORDS: Wrap every newly integrated keyword from the job description, revised phrasing, and tailored bullet point tweak in bold markdown (**like this**) so the user can easily see what was enhanced and adapted.
 - Format the output in clean Markdown with clear section headers (##).
 - Additionally, write a concise, 3-paragraph Cover Letter addressed to the Hiring Manager based on the aligned skills.
 
