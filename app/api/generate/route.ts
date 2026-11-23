@@ -24,15 +24,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 3. Validate inputs
+    // 3. Validate inputs (lower & upper bounds to prevent Gemini token-exhaustion DOS)
     const body = await request.json();
     const { resumeText, jobDescription } = body as { resumeText: string; jobDescription: string };
 
-    if (!jobDescription || jobDescription.trim().length < 10) {
+    if (!jobDescription || typeof jobDescription !== 'string' || jobDescription.trim().length < 10) {
       return NextResponse.json({ error: 'Job description is too short.' }, { status: 400 });
     }
-    if (!resumeText || resumeText.trim().length < 50) {
+    if (jobDescription.length > 30000) {
+      return NextResponse.json({ error: 'Job description exceeds maximum allowed length (30,000 characters).' }, { status: 400 });
+    }
+    if (!resumeText || typeof resumeText !== 'string' || resumeText.trim().length < 50) {
       return NextResponse.json({ error: 'Resume text is too short or empty.' }, { status: 400 });
+    }
+    if (resumeText.length > 50000) {
+      return NextResponse.json({ error: 'Resume text exceeds maximum allowed length (50,000 characters).' }, { status: 400 });
     }
 
     // 4. Check token balance (read-only, no deduction yet)

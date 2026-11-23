@@ -10,6 +10,18 @@ interface RateLimitEntry {
 }
 
 const store = new Map<string, RateLimitEntry>();
+const MAX_STORE_SIZE = 10000;
+
+// Periodic cleanup to prevent unbounded memory growth
+function pruneExpiredEntries(now: number) {
+  if (store.size < MAX_STORE_SIZE) return;
+  for (const [key, entry] of store.entries()) {
+    // If entry is older than 30 minutes, remove it
+    if (now - entry.windowStart > 30 * 60 * 1000) {
+      store.delete(key);
+    }
+  }
+}
 
 interface RateLimitOptions {
   /** Maximum requests allowed in the window */
@@ -26,6 +38,7 @@ interface RateLimitResult {
 
 export function rateLimit(key: string, options: RateLimitOptions): RateLimitResult {
   const now = Date.now();
+  pruneExpiredEntries(now);
   const { limit, windowMs } = options;
 
   const entry = store.get(key);

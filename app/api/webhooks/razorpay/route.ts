@@ -14,13 +14,25 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Missing signature' }, { status: 400 });
     }
 
-    // Verify HMAC-SHA256 signature
+    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
+    if (!webhookSecret || webhookSecret.startsWith('your_')) {
+      console.error('RAZORPAY_WEBHOOK_SECRET is unconfigured');
+      return NextResponse.json({ error: 'Webhook secret unconfigured' }, { status: 500 });
+    }
+
+    // Verify HMAC-SHA256 signature using timing-safe comparison to prevent side-channel leaks
     const expectedSignature = crypto
-      .createHmac('sha256', process.env.RAZORPAY_WEBHOOK_SECRET!)
+      .createHmac('sha256', webhookSecret)
       .update(rawBody)
       .digest('hex');
 
-    if (expectedSignature !== signature) {
+    const expectedBuf = Buffer.from(expectedSignature, 'utf8');
+    const signatureBuf = Buffer.from(signature, 'utf8');
+
+    if (
+      expectedBuf.length !== signatureBuf.length ||
+      !crypto.timingSafeEqual(expectedBuf, signatureBuf)
+    ) {
       return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
     }
 

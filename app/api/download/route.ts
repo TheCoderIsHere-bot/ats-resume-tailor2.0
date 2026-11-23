@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { generatePdf } from '@/lib/pdf';
 import { generateDocx } from '@/lib/docx';
+import { rateLimit } from '@/lib/rateLimit';
 
 /**
  * Convert edited HTML back to markdown for PDF/DOCX generation.
@@ -57,6 +58,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    // Rate limit downloads: 30 downloads per user per 10 minutes
+    const rl = rateLimit(`download:${user.id}`, { limit: 30, windowMs: 10 * 60 * 1000 });
+    if (!rl.allowed) {
+      return NextResponse.json({ error: 'Download limit exceeded. Please wait a moment.' }, { status: 429 });
+    }
+
     const body = await request.json();
     const { generationId, type, format = 'pdf', editedHtml } = body as {
       generationId: string;
@@ -65,8 +72,17 @@ export async function POST(request: NextRequest) {
       editedHtml?: string | null;
     };
 
-    if (!generationId || !type) {
-      return NextResponse.json({ error: 'Missing generationId or type' }, { status: 400 });
+    if (!generationId || typeof generationId !== 'string') {
+      return NextResponse.json({ error: 'Invalid or missing generationId' }, { status: 400 });
+    }
+    if (type !== 'resume' && type !== 'cover_letter') {
+      return NextResponse.json({ error: 'Invalid document type requested' }, { status: 400 });
+    }
+    if (format !== 'pdf' && format !== 'docx') {
+      return NextResponse.json({ error: 'Invalid format requested' }, { status: 400 });
+    }
+    if (editedHtml && (typeof editedHtml !== 'string' || editedHtml.length > 200000)) {
+      return NextResponse.json({ error: 'Edited content exceeds maximum length' }, { status: 400 });
     }
 
     let markdown: string;
