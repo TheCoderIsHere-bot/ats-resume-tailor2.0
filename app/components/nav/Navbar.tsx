@@ -91,6 +91,7 @@ export function Navbar() {
                 <button onClick={() => setShowPaywall(true)} className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-[#ecfdf5] border border-[#d1fae5] text-[#065f46] text-sm font-medium transition-transform hover:scale-105">{'✨'} {tokens} Token{tokens !== 1 ? 's' : ''}</button>
                 <div className="relative" ref={profileRef}>
                   <button onClick={() => { setShowProfileMenu(!showProfileMenu); setShowMobileNav(false); }} className="w-10 h-10 rounded-full bg-gray-200 border-2 border-white shadow-sm overflow-hidden focus:outline-none focus:ring-2 focus:ring-[#8AA694] transition-all flex items-center justify-center text-gray-500 hover:bg-gray-300">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     {user.user_metadata?.avatar_url ? <img src={user.user_metadata.avatar_url} alt="avatar" className="w-full h-full object-cover" /> : <User size={20} />}
                   </button>
                   <ProfileMenu

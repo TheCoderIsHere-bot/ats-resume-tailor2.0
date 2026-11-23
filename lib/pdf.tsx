@@ -6,7 +6,6 @@ import {
   View,
   StyleSheet,
   renderToBuffer,
-  type Styles,
 } from '@react-pdf/renderer';
 
 // ─── Register a clean sans-serif font from a CDN-hosted source ───────────────

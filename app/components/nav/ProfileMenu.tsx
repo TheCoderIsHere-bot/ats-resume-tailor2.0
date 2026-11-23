@@ -6,13 +6,13 @@ import type { User as SupabaseUser } from '@supabase/supabase-js';
 interface ProfileMenuProps {
   user: SupabaseUser;
   showProfileMenu: boolean;
-  setShowProfileMenu: (b: boolean) => void;
+  setShowProfileMenu?: (b: boolean) => void;
   onManageResume: () => void;
   onBilling: () => void;
   onLogout: () => void;
 }
 
-export function ProfileMenu({ user, showProfileMenu, setShowProfileMenu, onManageResume, onBilling, onLogout }: ProfileMenuProps) {
+export function ProfileMenu({ user, showProfileMenu, onManageResume, onBilling, onLogout }: ProfileMenuProps) {
   if (!showProfileMenu) return null;
 
   return (

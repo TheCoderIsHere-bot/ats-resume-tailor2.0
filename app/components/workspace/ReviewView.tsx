@@ -26,10 +26,8 @@ export function ReviewView() {
 
   const editRef = useRef<HTMLDivElement>(null);
 
-  if (!currentGeneration) return null;
-
-  const resumeHtml = editedResume ?? markdownToHtml(currentGeneration.tailored_resume, matchedKeywords);
-  const coverHtml = editedCoverLetter ?? markdownToHtml(currentGeneration.cover_letter);
+  const resumeHtml = editedResume ?? (currentGeneration ? markdownToHtml(currentGeneration.tailored_resume, matchedKeywords) : '');
+  const coverHtml = editedCoverLetter ?? (currentGeneration ? markdownToHtml(currentGeneration.cover_letter) : '');
   const currentHtml = activeTab === 'resume' ? resumeHtml : coverHtml;
 
   function startEdit() {
@@ -58,13 +56,15 @@ export function ReviewView() {
     let textToCopy = '';
     if (editRef.current) {
       textToCopy = editRef.current.innerText;
-    } else {
+    } else if (currentGeneration) {
       const rawMd = activeTab === 'resume' ? currentGeneration.tailored_resume : currentGeneration.cover_letter;
       textToCopy = rawMd.replace(/\*\*(.+?)\*\*/g, '$1').replace(/^#+\s+/gm, '').replace(/^[-*]\s+/gm, '• ');
     }
-    navigator.clipboard.writeText(textToCopy);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    if (textToCopy) {
+      navigator.clipboard.writeText(textToCopy);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
   }, [activeTab, currentGeneration]);
 
   const handleDownload = useCallback(async (type: 'resume' | 'cover_letter', format: 'pdf' | 'docx' = 'pdf') => {
@@ -88,6 +88,8 @@ export function ReviewView() {
       URL.revokeObjectURL(url);
     } catch { setError('Download failed. Please try again.'); }
   }, [currentGeneration, editedResume, editedCoverLetter, setError]);
+
+  if (!currentGeneration) return null;
 
   return (
     <div className="flex-1 flex flex-col lg:flex-row max-w-[1600px] w-full mx-auto animate-gentle">
