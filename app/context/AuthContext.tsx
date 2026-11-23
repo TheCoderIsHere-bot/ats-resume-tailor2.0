@@ -42,10 +42,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [generations, setGenerations] = useState<Generation[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
 
-  const fetchUserData = useCallback(async (userId: string) => {
+  const fetchUserData = useCallback(async (_userId?: string) => {
+    void _userId; // IDOR prevention: ignore any caller-supplied ID and bind strictly to the verified session
+    const { data: { user: currentUser } } = await supabase.auth.getUser();
+    if (!currentUser) return;
+    const targetUserId = currentUser.id;
+
     const [{ data: userData }, { data: genData }] = await Promise.all([
-      supabase.from('users').select('tokens_balance, master_resume_filename, master_resume_text').eq('id', userId).single(),
-      supabase.from('generations').select('*').eq('user_id', userId).order('created_at', { ascending: false }).limit(20),
+      supabase.from('users').select('tokens_balance, master_resume_filename, master_resume_text').eq('id', targetUserId).single(),
+      supabase.from('generations').select('*').eq('user_id', targetUserId).order('created_at', { ascending: false }).limit(20),
     ]);
     if (userData) {
       setTokens(userData.tokens_balance ?? 0);
@@ -56,16 +61,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const fetchTransactions = useCallback(async () => {
-    if (!user) return;
+    const { data: { user: currentUser } } = await supabase.auth.getUser();
+    if (!currentUser) return;
+    // Strict IDOR prevention: always bind queries to the authenticated session user ID
     const { data } = await supabase
       .from('transactions')
       .select('id, amount_inr, tokens_added, created_at')
-      .eq('user_id', user.id)
+      .eq('user_id', currentUser.id)
       .eq('status', 'Success')
       .order('created_at', { ascending: false })
       .limit(10);
     if (data) setTransactions(data);
-  }, [user]);
+  }, []);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }: { data: { user: SupabaseUser | null } }) => {

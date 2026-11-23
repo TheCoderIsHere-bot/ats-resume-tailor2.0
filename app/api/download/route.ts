@@ -85,28 +85,22 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Edited content exceeds maximum length' }, { status: 400 });
     }
 
-    let markdown: string;
+    // Strict IDOR Prevention: Verify that generationId exists and belongs to the authenticated user
+    const { data: generation, error: genError } = await supabase
+      .from('generations')
+      .select('tailored_resume, cover_letter, user_id')
+      .eq('id', generationId)
+      .eq('user_id', user.id)
+      .single();
 
-    if (editedHtml) {
-      // User edited the content — convert their HTML back to simple markdown
-      markdown = htmlToMarkdown(editedHtml);
-    } else {
-      // No edits — fetch original from DB
-      const { data: generation, error: genError } = await supabase
-        .from('generations')
-        .select('tailored_resume, cover_letter, user_id')
-        .eq('id', generationId)
-        .eq('user_id', user.id)
-        .single();
-
-      if (genError || !generation) {
-        return NextResponse.json({ error: 'Generation not found' }, { status: 404 });
-      }
-
-      markdown = type === 'resume'
-        ? generation.tailored_resume
-        : generation.cover_letter;
+    if (genError || !generation) {
+      return NextResponse.json({ error: 'Generation not found or access denied.' }, { status: 404 });
     }
+
+    // Use user-edited HTML if present; otherwise use the verified original from DB
+    const markdown = editedHtml
+      ? htmlToMarkdown(editedHtml)
+      : (type === 'resume' ? generation.tailored_resume : generation.cover_letter);
 
     const filename = type === 'resume' ? 'tailored_resume' : 'cover_letter';
 

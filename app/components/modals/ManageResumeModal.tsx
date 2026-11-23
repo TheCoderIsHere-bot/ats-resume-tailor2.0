@@ -6,14 +6,19 @@ import { useApp } from '@/app/context/AppContext';
 import { theme } from '@/lib/theme';
 
 export function ManageResumeModal() {
-  const { showManageResumeModal, setShowManageResumeModal, savedMasterResume, user, supabase, setSavedMasterResume, setSavedMasterResumeText, setError } = useApp();
+  const { showManageResumeModal, setShowManageResumeModal, savedMasterResume, supabase, setSavedMasterResume, setSavedMasterResumeText, setError } = useApp();
   const [masterResumeLoading, setMasterResumeLoading] = useState(false);
 
   if (!showManageResumeModal) return null;
 
   async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
-    if (!file || !user) return;
+    if (!file) return;
+
+    // Strict IDOR prevention: revalidate authenticated user session
+    const { data: { user: currentUser } } = await supabase.auth.getUser();
+    if (!currentUser) return;
+
     setMasterResumeLoading(true);
     try {
       const formData = new FormData();
@@ -22,9 +27,9 @@ export function ManageResumeModal() {
       if (!parseRes.ok) throw new Error('Failed to parse resume.');
       const { text } = await parseRes.json();
       const ext = file.name.substring(file.name.lastIndexOf('.'));
-      const storagePath = `${user.id}/master_resume${ext}`;
+      const storagePath = `${currentUser.id}/master_resume${ext}`;
       await supabase.storage.from('resumes').upload(storagePath, file, { upsert: true });
-      await supabase.from('users').update({ master_resume_filename: file.name, master_resume_text: text, master_resume_path: storagePath }).eq('id', user.id);
+      await supabase.from('users').update({ master_resume_filename: file.name, master_resume_text: text, master_resume_path: storagePath }).eq('id', currentUser.id);
       setSavedMasterResume(file.name);
       setSavedMasterResumeText(text);
       setShowManageResumeModal(false);
@@ -32,10 +37,16 @@ export function ManageResumeModal() {
   }
 
   async function handleRemove() {
-    if (!user) return;
-    const { data: ud } = await supabase.from('users').select('master_resume_path').eq('id', user.id).single();
-    if (ud?.master_resume_path) await supabase.storage.from('resumes').remove([ud.master_resume_path]);
-    await supabase.from('users').update({ master_resume_filename: null, master_resume_text: null, master_resume_path: null }).eq('id', user.id);
+    // Strict IDOR prevention: revalidate authenticated user session
+    const { data: { user: currentUser } } = await supabase.auth.getUser();
+    if (!currentUser) return;
+
+    const { data: ud } = await supabase.from('users').select('master_resume_path').eq('id', currentUser.id).single();
+    // Only allow removal if storage path strictly resides in current user's namespace
+    if (ud?.master_resume_path && ud.master_resume_path.startsWith(`${currentUser.id}/`)) {
+      await supabase.storage.from('resumes').remove([ud.master_resume_path]);
+    }
+    await supabase.from('users').update({ master_resume_filename: null, master_resume_text: null, master_resume_path: null }).eq('id', currentUser.id);
     setSavedMasterResume(null); setSavedMasterResumeText(null); setShowManageResumeModal(false);
   }
 
