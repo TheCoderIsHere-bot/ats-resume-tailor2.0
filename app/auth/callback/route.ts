@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { rateLimit, getRateLimitKey } from '@/lib/rateLimit';
+import { rateLimit, buildRateLimitHeaders, getRateLimitKey } from '@/lib/rateLimit';
 import { getAppOrigin } from '@/lib/env';
 import { logAuthEvent, logRateLimitExceeded, logApiError } from '@/lib/securityLogger';
 
@@ -24,7 +24,9 @@ export async function GET(request: NextRequest) {
       reason: 'callback_rate_limited',
       statusCode: 429,
     });
-    return NextResponse.redirect(`${origin}/?error=rate_limited`);
+    return NextResponse.redirect(`${origin}/?error=rate_limited`, {
+      headers: buildRateLimitHeaders(rl),
+    });
   }
 
   // 2. Check for upstream OAuth provider errors (e.g., user denied permission, invalid grant)

@@ -1,30 +1,42 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { User, X, AlertCircle } from 'lucide-react';
 import { useApp } from '@/app/context/AppContext';
 import { theme } from '@/lib/theme';
 
 export function LoginModal() {
-  const { showLoginModal, setShowLoginModal, supabase } = useApp();
+  const { showLoginModal, setShowLoginModal } = useApp();
   const [magicLinkSent, setMagicLinkSent] = useState(false);
   const [magicLinkLoading, setMagicLinkLoading] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [honeypot, setHoneypot] = useState('');
+  const mountedAtRef = useRef<number>(0);
+
+  useEffect(() => {
+    if (showLoginModal) {
+      mountedAtRef.current = Date.now();
+    }
+  }, [showLoginModal]);
 
   if (!showLoginModal) return null;
 
   async function handleGoogleLogin() {
     setAuthError(null);
+    setGoogleLoading(true);
     try {
-      const result = await supabase.auth.signInWithOAuth({
-        provider: 'google',
-        options: { redirectTo: `${window.location.origin}/auth/callback` },
-      });
-      if (result && 'error' in result && result.error) {
-        setAuthError(result.error.message);
+      const res = await fetch('/api/auth/oauth/google', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok || !data.url) {
+        setAuthError(data.error || 'Failed to initiate Google sign in. Please try again.');
+        return;
       }
+      window.location.assign(data.url);
     } catch {
       setAuthError('Failed to initiate Google sign in. Please try again.');
+    } finally {
+      setGoogleLoading(false);
     }
   }
 
@@ -38,11 +50,15 @@ export function LoginModal() {
     setMagicLinkLoading(true);
 
     try {
-      // Call secure server endpoint with strict IP and email rate limiting
+      // Call secure server endpoint with rate limiting & anti-bot honeypot/timing validation
       const res = await fetch('/api/auth/send-magic-link', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({
+          email,
+          _hp: honeypot,
+          _ts: mountedAtRef.current,
+        }),
       });
 
       const data = await res.json();
@@ -105,6 +121,20 @@ export function LoginModal() {
         ) : (
           <>
             <form onSubmit={handleMagicLink} className="flex flex-col gap-3">
+              {/* Hidden anti-bot honeypot field — invisible to humans */}
+              <div className="sr-only" aria-hidden="true">
+                <label htmlFor="auth-website">Website</label>
+                <input
+                  id="auth-website"
+                  name="website"
+                  type="text"
+                  tabIndex={-1}
+                  autoComplete="off"
+                  value={honeypot}
+                  onChange={(e) => setHoneypot(e.target.value)}
+                />
+              </div>
+
               <input
                 name="email"
                 type="email"
@@ -115,7 +145,7 @@ export function LoginModal() {
               />
               <button
                 type="submit"
-                disabled={magicLinkLoading}
+                disabled={magicLinkLoading || googleLoading}
                 className="w-full py-3.5 rounded-2xl bg-[#8AA694] hover:bg-[#7a9684] text-white font-medium transition-all disabled:opacity-60"
               >
                 {magicLinkLoading ? 'Sending\u2026' : 'Send Magic Link'}
@@ -130,7 +160,8 @@ export function LoginModal() {
 
             <button
               onClick={handleGoogleLogin}
-              className="w-full flex items-center justify-center gap-3 py-3.5 rounded-2xl border border-gray-200 text-[#333333] font-medium transition-all shadow-sm hover:bg-gray-50 text-sm"
+              disabled={googleLoading || magicLinkLoading}
+              className="w-full flex items-center justify-center gap-3 py-3.5 rounded-2xl border border-gray-200 text-[#333333] font-medium transition-all shadow-sm hover:bg-gray-50 text-sm disabled:opacity-60"
             >
               <svg className="w-4 h-4" viewBox="0 0 24 24">
                 <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
@@ -138,7 +169,7 @@ export function LoginModal() {
                 <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
                 <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
               </svg>
-              Continue with Google
+              {googleLoading ? 'Connecting\u2026' : 'Continue with Google'}
             </button>
           </>
         )}

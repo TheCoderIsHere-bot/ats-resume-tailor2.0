@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
-import { rateLimit } from '@/lib/rateLimit';
+import { rateLimit, buildRateLimitHeaders } from '@/lib/rateLimit';
 import { logAuthEvent, logRateLimitExceeded, logApiError } from '@/lib/securityLogger';
 
 const ROUTE = '/api/user/transactions';
@@ -31,7 +31,10 @@ export async function GET(request: NextRequest) {
         limit: 30,
         resetInMs: rl.resetInMs,
       });
-      return NextResponse.json({ error: 'Too many requests.' }, { status: 429 });
+      return NextResponse.json(
+        { error: 'Too many requests.' },
+        { status: 429, headers: buildRateLimitHeaders(rl) }
+      );
     }
 
     // Server-side privileged DB read strictly scoped to verified user.id

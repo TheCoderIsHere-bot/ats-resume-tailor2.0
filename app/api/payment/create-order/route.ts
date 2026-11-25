@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { rateLimit } from '@/lib/rateLimit';
+import { rateLimitMulti, buildRateLimitHeaders, getRateLimitKey } from '@/lib/rateLimit';
 import { getOptionalServerEnv } from '@/lib/env';
 import { logAuthEvent, logRateLimitExceeded, logApiError } from '@/lib/securityLogger';
 import Razorpay from 'razorpay';
@@ -26,16 +26,32 @@ export async function POST(request: NextRequest) {
 
     userId = user.id;
 
-    // Rate limit order creation (max 10 orders per 10 minutes per user)
-    const rl = rateLimit(`order:${user.id}`, { limit: 10, windowMs: 10 * 60 * 1000 });
+    // Rate limit order creation: 10 / 10min per user & 20 / 1h per IP
+    const rl = rateLimitMulti([
+      {
+        key: `order:user-10m:${user.id}`,
+        name: 'user_10m',
+        limit: 10,
+        windowMs: 10 * 60 * 1000,
+      },
+      {
+        key: getRateLimitKey(request, ':order-ip-1h'),
+        name: 'ip_1h',
+        limit: 20,
+        windowMs: 60 * 60 * 1000,
+      },
+    ]);
     if (!rl.allowed) {
       logRateLimitExceeded(request, ROUTE, {
         userId: user.id,
-        limitKey: 'create-order',
-        limit: 10,
+        limitKey: rl.blockedBy ?? 'create-order',
+        limit: rl.limit,
         resetInMs: rl.resetInMs,
       });
-      return NextResponse.json({ error: 'Too many requests. Please wait a moment.' }, { status: 429 });
+      return NextResponse.json(
+        { error: 'Too many requests. Please wait a moment.' },
+        { status: 429, headers: buildRateLimitHeaders(rl) }
+      );
     }
 
     const keyId = getOptionalServerEnv('RAZORPAY_KEY_ID');

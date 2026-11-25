@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { generatePdf } from '@/lib/pdf';
 import { generateDocx } from '@/lib/docx';
-import { rateLimit } from '@/lib/rateLimit';
+import { rateLimitMulti, buildRateLimitHeaders } from '@/lib/rateLimit';
 import {
   getClientIp,
   getRequestId,
@@ -77,16 +77,32 @@ export async function POST(request: NextRequest) {
 
     userId = user.id;
 
-    // Rate limit downloads: 30 downloads per user per 10 minutes
-    const rl = rateLimit(`download:${user.id}`, { limit: 30, windowMs: 10 * 60 * 1000 });
+    // Rate limit downloads: 30 / 10min & 100 / 24h per user
+    const rl = rateLimitMulti([
+      {
+        key: `download:10m:${user.id}`,
+        name: 'user_10m',
+        limit: 30,
+        windowMs: 10 * 60 * 1000,
+      },
+      {
+        key: `download:24h:${user.id}`,
+        name: 'user_24h',
+        limit: 100,
+        windowMs: 24 * 60 * 60 * 1000,
+      },
+    ]);
     if (!rl.allowed) {
       logRateLimitExceeded(request, ROUTE, {
         userId: user.id,
-        limitKey: 'download',
-        limit: 30,
+        limitKey: rl.blockedBy ?? 'download',
+        limit: rl.limit,
         resetInMs: rl.resetInMs,
       });
-      return NextResponse.json({ error: 'Download limit exceeded. Please wait a moment.' }, { status: 429 });
+      return NextResponse.json(
+        { error: 'Download limit exceeded. Please wait a moment.' },
+        { status: 429, headers: buildRateLimitHeaders(rl) }
+      );
     }
 
     const body = await request.json();

@@ -93,7 +93,10 @@ function AppActionsProvider({ children }: { children: React.ReactNode }) {
         const formData = new FormData();
         formData.append('file', resumeFile);
         const parseRes = await fetch('/api/parse-resume', { method: 'POST', body: formData, signal: controller.signal });
-        if (!parseRes.ok) throw new Error('Failed to parse resume. Please try again.');
+        if (!parseRes.ok) {
+          const err = await parseRes.json().catch(() => ({}));
+          throw new Error(err.error ?? 'Failed to parse resume. Please try again.');
+        }
         resumeText = (await parseRes.json()).text;
       } else if (savedMasterResumeText) {
         resumeText = savedMasterResumeText;

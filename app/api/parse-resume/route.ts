@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { rateLimit } from '@/lib/rateLimit';
+import { rateLimitMulti, buildRateLimitHeaders, getRateLimitKey } from '@/lib/rateLimit';
 import { parseResumeFile } from '@/lib/parseResume';
 import {
   getClientIp,
@@ -29,16 +29,39 @@ export async function POST(request: NextRequest) {
 
     userId = user.id;
 
-    // Rate limit: 20 parses per user per 10 minutes
-    const rl = rateLimit(`parse:${user.id}`, { limit: 20, windowMs: 10 * 60 * 1000 });
+    // Rate limit: 15 / 10min, 50 / 24h per user, 30 / 1h per IP
+    const rl = rateLimitMulti([
+      {
+        key: `parse:user-10m:${user.id}`,
+        name: 'user_10m',
+        limit: 15,
+        windowMs: 10 * 60 * 1000,
+      },
+      {
+        key: `parse:user-24h:${user.id}`,
+        name: 'user_24h',
+        limit: 50,
+        windowMs: 24 * 60 * 60 * 1000,
+      },
+      {
+        key: getRateLimitKey(request, ':parse-ip-1h'),
+        name: 'ip_1h',
+        limit: 30,
+        windowMs: 60 * 60 * 1000,
+      },
+    ]);
+
     if (!rl.allowed) {
       logRateLimitExceeded(request, ROUTE, {
         userId: user.id,
-        limitKey: 'parse',
-        limit: 20,
+        limitKey: rl.blockedBy ?? 'parse',
+        limit: rl.limit,
         resetInMs: rl.resetInMs,
       });
-      return NextResponse.json({ error: 'Too many requests. Please wait a moment.' }, { status: 429 });
+      return NextResponse.json(
+        { error: 'Too many resume parse requests. Please wait a moment.' },
+        { status: 429, headers: buildRateLimitHeaders(rl) }
+      );
     }
 
     const formData = await request.formData();
@@ -67,7 +90,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: parsed.error }, { status: parsed.status });
     }
 
-    return NextResponse.json({ text: parsed.text });
+    return NextResponse.json({ text: parsed.text }, { headers: buildRateLimitHeaders(rl) });
   } catch (error) {
     logApiError(request, ROUTE, error, { userId, statusCode: 500 });
     return NextResponse.json({ error: 'Failed to parse resume.' }, { status: 500 });

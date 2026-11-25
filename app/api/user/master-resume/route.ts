@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
-import { rateLimit } from '@/lib/rateLimit';
+import { rateLimitMulti, buildRateLimitHeaders } from '@/lib/rateLimit';
 import { parseResumeFile } from '@/lib/parseResume';
 import {
   getClientIp,
@@ -30,16 +30,32 @@ export async function POST(request: NextRequest) {
 
     userId = user.id;
 
-    // Rate limit: 10 master resume updates per user per 10 minutes
-    const rl = rateLimit(`master-resume:${user.id}`, { limit: 10, windowMs: 10 * 60 * 1000 });
+    // Rate limit: 10 / 10min & 30 / 24h per user
+    const rl = rateLimitMulti([
+      {
+        key: `master-resume:10m:${user.id}`,
+        name: 'user_10m',
+        limit: 10,
+        windowMs: 10 * 60 * 1000,
+      },
+      {
+        key: `master-resume:24h:${user.id}`,
+        name: 'user_24h',
+        limit: 30,
+        windowMs: 24 * 60 * 60 * 1000,
+      },
+    ]);
     if (!rl.allowed) {
       logRateLimitExceeded(request, ROUTE, {
         userId: user.id,
-        limitKey: 'master-resume',
-        limit: 10,
+        limitKey: rl.blockedBy ?? 'master-resume',
+        limit: rl.limit,
         resetInMs: rl.resetInMs,
       });
-      return NextResponse.json({ error: 'Too many uploads. Please wait a moment.' }, { status: 429 });
+      return NextResponse.json(
+        { error: 'Too many uploads. Please wait a moment.' },
+        { status: 429, headers: buildRateLimitHeaders(rl) }
+      );
     }
 
     const formData = await request.formData();

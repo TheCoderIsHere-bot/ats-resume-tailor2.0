@@ -1,22 +1,40 @@
 import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
-import { detectSuspiciousProbe, trackApiTrafficBurst } from '@/lib/trafficMonitor';
+import {
+  detectBotOrScriptRequest,
+  detectCrossSiteApiAbuse,
+  detectSuspiciousProbe,
+  isIpTemporarilyBanned,
+  recordSuspiciousSignal,
+  trackApiTrafficBurst,
+  trackPageTraffic,
+  banIpTemporarily,
+} from '@/lib/trafficMonitor';
 import { getClientIp, getRequestId, logSecurityEvent } from '@/lib/securityLogger';
 
+const MAX_UPLOAD_BYTES = 6 * 1024 * 1024; // 6 MB (covers 5 MB file + multipart boundary overhead)
+const MAX_DOC_API_BYTES = 512 * 1024; // 512 KB (covers max 50k resume + 30k JD + 200k editedHtml)
+const MAX_SMALL_API_BYTES = 128 * 1024; // 128 KB for auth/leads/payment/score
+
+function getPayloadLimitBytes(pathname: string): number {
+  if (pathname.startsWith('/api/parse-resume') || pathname.startsWith('/api/user/master-resume')) {
+    return MAX_UPLOAD_BYTES;
+  }
+  if (pathname.startsWith('/api/generate') || pathname.startsWith('/api/download')) {
+    return MAX_DOC_API_BYTES;
+  }
+  return MAX_SMALL_API_BYTES;
+}
+
 /**
- * Security, HTTPS Enforcement, Traffic Monitoring & Session Refresh Middleware
- *
- * Responsibilities:
- * 1. Redirects insecure HTTP traffic to HTTPS in production (non-localhost).
- * 2. Detects & blocks automated recon/path-traversal probes before rendering.
- * 3. Monitors API/Auth traffic bursts and throttles extreme single-IP floods.
- * 4. Validates and refreshes Supabase session tokens via getUser() with secure cookies.
+ * Abuse Protection, Bot Mitigation, HTTPS Enforcement & Session Middleware
  */
 export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   const ip = getClientIp(request.headers);
   const userAgent = request.headers.get('user-agent');
   const requestId = getRequestId(request.headers);
+  const isWebhook = pathname.startsWith('/api/webhooks/');
 
   // 1. Enforce HTTPS in production (behind TLS-terminating reverse proxies)
   if (process.env.NODE_ENV === 'production') {
@@ -32,9 +50,24 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // 2. Detect & block recon, path traversal, and vulnerability scanner probes
+  // 2. Immediately reject temporarily banned abusive IPs (skipping external payment webhooks)
+  if (!isWebhook) {
+    const banStatus = isIpTemporarilyBanned(ip);
+    if (banStatus.banned) {
+      return NextResponse.json(
+        { error: 'Temporarily blocked due to unusual or abusive traffic. Please try again later.' },
+        {
+          status: 429,
+          headers: { 'Retry-After': String(banStatus.retryAfterSec) },
+        }
+      );
+    }
+  }
+
+  // 3. Detect & block recon, path traversal, and vulnerability scanner probes
   const probeReason = detectSuspiciousProbe(pathname, userAgent);
   if (probeReason) {
+    recordSuspiciousSignal(ip, 'BOT_PROBE');
     logSecurityEvent({
       eventType: 'TRAFFIC_ANOMALY',
       severity: 'warn',
@@ -49,8 +82,57 @@ export async function middleware(request: NextRequest) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 });
   }
 
-  // 3. Detect unusual API/Auth traffic bursts per IP
-  if (pathname.startsWith('/api/') || pathname.startsWith('/auth/')) {
+  // 4. Block automated scripts, scrapers, and missing User-Agent bots (never block external webhooks)
+  if (!isWebhook) {
+    const botReason = detectBotOrScriptRequest(pathname, userAgent);
+    if (botReason) {
+      const signal = recordSuspiciousSignal(ip, 'BOT_PROBE');
+      logSecurityEvent({
+        eventType: 'TRAFFIC_ANOMALY',
+        severity: signal.escalated ? 'critical' : 'warn',
+        route: pathname,
+        method: request.method,
+        ip,
+        userAgent,
+        requestId,
+        statusCode: 403,
+        details: { anomaly: botReason, probeCount10m: signal.count },
+      });
+      return NextResponse.json({ error: 'Automated access is not permitted.' }, { status: 403 });
+    }
+  }
+
+  // 5. Block cross-site / untrusted-origin mutating API calls
+  const crossSiteAbuse = detectCrossSiteApiAbuse(request);
+  if (crossSiteAbuse) {
+    logSecurityEvent({
+      eventType: 'SECURITY_VIOLATION',
+      severity: 'warn',
+      route: pathname,
+      method: request.method,
+      ip,
+      userAgent,
+      requestId,
+      statusCode: 403,
+      details: { violation: crossSiteAbuse },
+    });
+    return NextResponse.json({ error: 'Forbidden origin' }, { status: 403 });
+  }
+
+  // 6. Early payload size guard on API routes
+  if (pathname.startsWith('/api/') && !isWebhook) {
+    const contentLengthHeader = request.headers.get('content-length');
+    if (contentLengthHeader) {
+      const contentLength = Number(contentLengthHeader);
+      const maxBytes = getPayloadLimitBytes(pathname);
+      if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+        return NextResponse.json({ error: 'Request payload too large.' }, { status: 413 });
+      }
+    }
+  }
+
+  // 7. Traffic rate limiting (API bursts + public page scraping protection)
+  if ((pathname.startsWith('/api/') && !isWebhook) || pathname.startsWith('/auth/')) {
     const burst = trackApiTrafficBurst(ip);
     if (burst.isBurstWarn || burst.shouldBlock) {
       logSecurityEvent({
@@ -70,9 +152,29 @@ export async function middleware(request: NextRequest) {
     }
 
     if (burst.shouldBlock) {
+      banIpTemporarily(ip);
       return NextResponse.json(
         { error: 'Too many requests. Please slow down.' },
         { status: 429, headers: { 'Retry-After': '60' } }
+      );
+    }
+  } else if (!isWebhook) {
+    const pageLimit = trackPageTraffic(ip);
+    if (!pageLimit.allowed) {
+      logSecurityEvent({
+        eventType: 'RATE_LIMIT_EXCEEDED',
+        severity: 'warn',
+        route: pathname,
+        method: request.method,
+        ip,
+        userAgent,
+        requestId,
+        statusCode: 429,
+        details: { anomaly: 'PAGE_SCRAPE_RATE_LIMIT', requestsIn60s: pageLimit.count },
+      });
+      return NextResponse.json(
+        { error: 'Too many page requests. Please try again shortly.' },
+        { status: 429, headers: { 'Retry-After': String(pageLimit.retryAfterSec) } }
       );
     }
   }
@@ -84,14 +186,13 @@ export async function middleware(request: NextRequest) {
   });
 
   // Webhooks authenticate via HMAC signatures, not Supabase browser session cookies
-  if (pathname.startsWith('/api/webhooks/')) {
+  if (isWebhook) {
     return response;
   }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
-  // If Supabase environment is unconfigured (e.g. during build or initial setup), continue
   if (!supabaseUrl || !supabaseAnonKey || !supabaseUrl.startsWith('http')) {
     return response;
   }
@@ -124,9 +225,6 @@ export async function middleware(request: NextRequest) {
     }
   );
 
-  // IMPORTANT: supabase.auth.getUser() sends a request to the Supabase Auth server
-  // to revalidate the auth token and refresh it if necessary.
-  // Never use getSession() inside middleware because it does not verify the JWT.
   await supabase.auth.getUser();
 
   return response;
@@ -134,13 +232,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * - Public static assets: svg, png, jpg, jpeg, gif, webp, etc.
-     */
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 };

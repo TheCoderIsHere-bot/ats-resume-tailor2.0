@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { FileText, Mail, UploadCloud, Download, Sparkles, CheckCircle2, Shield, Target } from 'lucide-react';
 import { useApp } from '@/app/context/AppContext';
 import { theme } from '@/lib/theme';
@@ -8,8 +8,14 @@ import { theme } from '@/lib/theme';
 export function LandingPage() {
   const { setShowLoginModal, setError } = useApp();
   const [leadEmail, setLeadEmail] = useState('');
+  const [leadHoneypot, setLeadHoneypot] = useState('');
   const [leadSubmitted, setLeadSubmitted] = useState(false);
   const [leadLoading, setLeadLoading] = useState(false);
+  const mountedAtRef = useRef<number>(0);
+
+  useEffect(() => {
+    mountedAtRef.current = Date.now();
+  }, []);
 
   async function handleLeadCapture(e: React.FormEvent) {
     e.preventDefault();
@@ -19,12 +25,17 @@ export function LandingPage() {
       const res = await fetch('/api/leads', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: leadEmail }),
+        body: JSON.stringify({
+          email: leadEmail,
+          _hp: leadHoneypot,
+          _ts: mountedAtRef.current,
+        }),
       });
       if (res.ok) {
         setLeadSubmitted(true);
       } else {
-        setError('Could not save your email. Please try again.');
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || 'Could not save your email. Please try again.');
       }
     } catch {
       setError('Network error. Please try again.');
@@ -152,6 +163,18 @@ export function LandingPage() {
             </div>
           ) : (
             <form onSubmit={handleLeadCapture} className="flex flex-col sm:flex-row gap-3">
+              <div className="sr-only" aria-hidden="true">
+                <label htmlFor="lead-website">Website</label>
+                <input
+                  id="lead-website"
+                  name="website"
+                  type="text"
+                  tabIndex={-1}
+                  autoComplete="off"
+                  value={leadHoneypot}
+                  onChange={(e) => setLeadHoneypot(e.target.value)}
+                />
+              </div>
               <input type="email" required value={leadEmail} onChange={(e) => setLeadEmail(e.target.value)} placeholder="your@email.com" className="flex-1 px-5 py-3.5 rounded-2xl border border-gray-200 text-[#333333] text-sm outline-none focus:border-[#8AA694] transition-colors" />
               <button type="submit" disabled={leadLoading} className={`px-8 py-3.5 rounded-2xl ${theme.accentSage} ${theme.accentSageHover} text-white text-sm font-medium transition-all shadow-sm disabled:opacity-60`}>{leadLoading ? 'Sending\u2026' : 'Get Sample'}</button>
             </form>
