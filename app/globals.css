@@ -33,46 +33,43 @@ body {
 
 /* Animations */
 @keyframes breathe {
-  0%, 100% { transform: scale(1); opacity: .3; }
-  50% { transform: scale(1.15); opacity: .6; }
+  0%, 100% { transform: scale(1); opacity: 0.2; }
+  50% { transform: scale(1.08); opacity: 0.34; }
 }
 .animate-breathe {
-  animation: breathe 5s ease-in-out infinite;
+  animation: breathe 8s ease-in-out infinite;
+}
+
+@keyframes breatheSlow {
+  0%, 100% { transform: scale(1.04) translate(0px, 0px); opacity: 0.16; }
+  50% { transform: scale(0.96) translate(6px, -6px); opacity: 0.28; }
+}
+.animate-breathe-slow {
+  animation: breatheSlow 10s ease-in-out infinite;
 }
 
 @keyframes gentleFade {
-  from { opacity: 0; transform: translateY(10px); }
+  from { opacity: 0; transform: translateY(8px); }
   to { opacity: 1; transform: translateY(0); }
 }
 .animate-gentle {
-  animation: gentleFade .6s ease-out forwards;
+  animation: gentleFade 0.65s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
-@keyframes textFade {
-  0% { opacity: 0; filter: blur(4px); }
-  20% { opacity: 1; filter: blur(0); }
-  80% { opacity: 1; filter: blur(0); }
-  100% { opacity: 0; filter: blur(4px); }
+@keyframes mindfulEnter {
+  from { opacity: 0; transform: translateY(6px) scale(0.99); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
-.animate-text-fade {
-  animation: textFade 2.5s ease-in-out forwards;
+.animate-mindful-enter {
+  animation: mindfulEnter 0.7s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
-@keyframes textHold {
-  0% { opacity: 0; filter: blur(4px); }
-  30% { opacity: 1; filter: blur(0); }
-  100% { opacity: 1; filter: blur(0); }
+@keyframes stepReveal {
+  from { opacity: 0; transform: translateY(6px); filter: blur(2px); }
+  to { opacity: 1; transform: translateY(0); filter: blur(0); }
 }
-.animate-text-hold {
-  animation: textHold 1s ease-out forwards;
-}
-
-@keyframes skipAppear {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-.animate-skip-appear {
-  animation: skipAppear .5s ease-out 3s forwards;
+.animate-step-reveal {
+  animation: stepReveal 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 
 @keyframes menuOpen {

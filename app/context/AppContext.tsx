@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useCallback, useRef } from 'react';
+import React, { createContext, useContext, useCallback } from 'react';
 import { AuthProvider, useAuth } from './AuthContext';
 import { UIProvider, useUI } from './UIContext';
 import { WorkspaceProvider, useWorkspace } from './WorkspaceContext';
@@ -16,7 +16,6 @@ interface AppActions {
   handleLogout: () => Promise<void>;
   handleCraft: () => Promise<void>;
   handleRetry: () => void;
-  handleSkipMindful: () => void;
   openArchiveItem: (gen: Generation) => void;
 }
 
@@ -43,11 +42,10 @@ function AppActionsProvider({ children }: { children: React.ReactNode }) {
   const {
     resumeFile, jdText, setResumeFile, setJdText, setActiveTab, setCurrentGeneration,
     setAtsScore, setScoreBefore, setScoreBreakdown, setMatchedKeywords, setMissedKeywords, setScoreLoading, setProcessingStep, setApiResolved,
-    setStepAnimKey, setLoopCount, lastCraftInputs, setLastCraftInputs, apiResolved, currentGeneration
+    lastCraftInputs, setLastCraftInputs
   } = useWorkspace();
 
   const { savedMasterResumeText } = useAuth();
-  const loopCountRef = useRef(0);
 
   const handleLogout = useCallback(async () => {
     await fetch('/api/auth/signout', { method: 'POST' }).catch(() => {});
@@ -62,27 +60,15 @@ function AppActionsProvider({ children }: { children: React.ReactNode }) {
     setLastCraftInputs({ resumeFile, jdText });
     setError(null); setAppState('mindful'); setProcessingStep(0); setApiResolved(false);
     setAtsScore(null); setScoreBefore(null); setScoreBreakdown(null);
-    setMatchedKeywords([]); setMissedKeywords([]); setStepAnimKey(0); setLoopCount(0);
-    loopCountRef.current = 0;
+    setMatchedKeywords([]); setMissedKeywords([]);
 
     let step = 0;
-    let apiDone = false;
     const interval = setInterval(() => {
-      step++;
       if (step < mindfulSteps.length - 1) {
+        step++;
         setProcessingStep(step);
-      } else if (apiDone) {
-        clearInterval(interval);
-        setProcessingStep(mindfulSteps.length - 1);
-        setTimeout(() => { setAppState('review'); setActiveTab('resume'); }, 2000);
-      } else {
-        step = mindfulSteps.length - 1;
-        setProcessingStep(mindfulSteps.length - 1);
-        loopCountRef.current += 1;
-        setLoopCount(loopCountRef.current);
-        setStepAnimKey(prev => prev + 1);
       }
-    }, 2500);
+    }, 2600);
 
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 90000); // 90s — two parallel Gemini calls
@@ -109,8 +95,9 @@ function AppActionsProvider({ children }: { children: React.ReactNode }) {
       });
 
       clearTimeout(timeoutId);
+      clearInterval(interval);
 
-      if (genRes.status === 402) { clearInterval(interval); setAppState('desk'); setShowPaywall(true); return; }
+      if (genRes.status === 402) { setAppState('desk'); setShowPaywall(true); return; }
       if (!genRes.ok) { const err = await genRes.json(); throw new Error(err.error ?? 'Generation failed. Please try again.'); }
 
       const data = await genRes.json();
@@ -123,11 +110,17 @@ function AppActionsProvider({ children }: { children: React.ReactNode }) {
       setTokens((prev) => Math.max(0, prev - 1));
       if (user) fetchUserData(user.id);
 
-      apiDone = true;
+      // Glide smoothly to the final step, let MindfulView fade out calmly, then open ReviewView
+      setProcessingStep(mindfulSteps.length - 1);
       setApiResolved(true);
+      setTimeout(() => {
+        setAppState('review');
+        setActiveTab('resume');
+      }, 750);
     } catch (err: unknown) {
       clearInterval(interval);
       clearTimeout(timeoutId);
+      setApiResolved(false);
       setAppState('desk');
       setScoreBefore(null); setScoreBreakdown(null);
       if (err instanceof DOMException && err.name === 'AbortError') {
@@ -136,7 +129,7 @@ function AppActionsProvider({ children }: { children: React.ReactNode }) {
         setError(err instanceof Error ? err.message : 'Something went wrong.');
       }
     }
-  }, [user, tokens, resumeFile, jdText, savedMasterResumeText, fetchUserData, setShowLoginModal, setShowPaywall, setLastCraftInputs, setError, setAppState, setProcessingStep, setApiResolved, setAtsScore, setScoreBefore, setScoreBreakdown, setMatchedKeywords, setMissedKeywords, setStepAnimKey, setLoopCount, setCurrentGeneration, setActiveTab, setTokens]);
+  }, [user, tokens, resumeFile, jdText, savedMasterResumeText, fetchUserData, setShowLoginModal, setShowPaywall, setLastCraftInputs, setError, setAppState, setProcessingStep, setApiResolved, setAtsScore, setScoreBefore, setScoreBreakdown, setMatchedKeywords, setMissedKeywords, setCurrentGeneration, setActiveTab, setTokens]);
 
   const handleRetry = useCallback(() => {
     if (!lastCraftInputs) return;
@@ -145,13 +138,6 @@ function AppActionsProvider({ children }: { children: React.ReactNode }) {
     setError(null);
     setTimeout(() => handleCraft(), 0);
   }, [lastCraftInputs, handleCraft, setResumeFile, setJdText, setError]);
-
-  const handleSkipMindful = useCallback(() => {
-    if (apiResolved && currentGeneration) {
-      setAppState('review');
-      setActiveTab('resume');
-    }
-  }, [apiResolved, currentGeneration, setAppState, setActiveTab]);
 
   const openArchiveItem = useCallback((gen: Generation) => {
     setCurrentGeneration(gen);
@@ -205,7 +191,7 @@ function AppActionsProvider({ children }: { children: React.ReactNode }) {
   }, [setCurrentGeneration, setAtsScore, setScoreBefore, setScoreBreakdown, setMatchedKeywords, setMissedKeywords, setScoreLoading, setCurrentView, setAppState, setActiveTab]);
 
   return (
-    <AppActionsContext.Provider value={{ handleLogout, handleCraft, handleRetry, handleSkipMindful, openArchiveItem }}>
+    <AppActionsContext.Provider value={{ handleLogout, handleCraft, handleRetry, openArchiveItem }}>
       {children}
     </AppActionsContext.Provider>
   );

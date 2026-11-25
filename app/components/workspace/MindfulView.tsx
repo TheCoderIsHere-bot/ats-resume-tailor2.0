@@ -1,78 +1,81 @@
 'use client';
 
-import { SkipForward } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { useApp } from '@/app/context/AppContext';
 import { mindfulSteps, waitingLines } from '@/lib/theme';
 
 export function MindfulView() {
-  const { processingStep, stepAnimKey, loopCount, apiResolved, handleSkipMindful } = useApp();
+  const { processingStep, apiResolved } = useApp();
+  const [waitingIdx, setWaitingIdx] = useState(0);
+  const [showWaiting, setShowWaiting] = useState(false);
 
   const isOnLastStep = processingStep === mindfulSteps.length - 1;
-  // While API is still running: loop with the same fade animation as every other step
-  // Once apiResolved: use text-hold so it stays visible during the 2s transition to review
-  const lastStepAnim = isOnLastStep
-    ? (apiResolved ? 'animate-text-hold' : 'animate-text-fade')
-    : 'animate-text-fade';
 
-  // Show a waiting sub-line from the 3rd loop onward (loopCount >= 2, 0-indexed)
-  const showWaitingLine = isOnLastStep && loopCount >= 2 && !apiResolved;
-  // Pick the next message each loop so it never repeats back-to-back
-  const waitingLineText = waitingLines[(loopCount - 2) % waitingLines.length];
+  useEffect(() => {
+    if (!isOnLastStep || apiResolved) return;
+
+    const showTimer = setTimeout(() => setShowWaiting(true), 2500);
+    const cycleTimer = setInterval(() => {
+      setWaitingIdx((prev) => (prev + 1) % waitingLines.length);
+    }, 4500);
+
+    return () => {
+      clearTimeout(showTimer);
+      clearInterval(cycleTimer);
+    };
+  }, [isOnLastStep, apiResolved]);
 
   return (
-    <div className="flex-1 flex flex-col items-center justify-center relative animate-gentle">
-      {/* Background orbs */}
+    <div
+      className={`flex-1 flex flex-col items-center justify-center px-6 relative animate-mindful-enter transition-all duration-500 ease-out ${
+        apiResolved ? 'opacity-0 scale-[0.985] delay-200 pointer-events-none' : 'opacity-100 scale-100'
+      }`}
+    >
+      {/* Subtle breathing ambient orbs */}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-        <div className="w-64 h-64 rounded-full bg-[#8AA694] mix-blend-multiply filter blur-3xl animate-breathe" />
-        <div className="absolute w-48 h-48 rounded-full bg-[#b8c9bf] mix-blend-multiply filter blur-2xl animate-breathe" style={{ animationDelay: '1s' }} />
+        <div className="w-72 h-72 rounded-full bg-[#8AA694]/50 mix-blend-multiply filter blur-3xl animate-breathe" />
+        <div className="absolute w-52 h-52 rounded-full bg-[#b8c9bf]/50 mix-blend-multiply filter blur-3xl animate-breathe-slow" />
       </div>
 
-      {/* Main step text */}
-      <div className="relative z-10 text-center flex flex-col items-center gap-4">
-        <h2
-          key={`${processingStep}-${stepAnimKey}`}
-          className={`text-2xl md:text-3xl font-medium text-[#444444] ${lastStepAnim}`}
-        >
-          {mindfulSteps[processingStep]}
-        </h2>
+      {/* Centered calm step progress */}
+      <div className="relative z-10 text-center flex flex-col items-center gap-4 max-w-xl">
+        <div className="min-h-[2.75rem] flex items-center justify-center">
+          <h2
+            key={processingStep}
+            className="text-2xl md:text-3xl font-medium text-[#3F4542] animate-step-reveal"
+          >
+            {mindfulSteps[processingStep]}
+          </h2>
+        </div>
 
-        {/* Dynamic waiting sub-line — fades in after 3rd loop on the last step */}
-        <div className="h-5">
-          {showWaitingLine && (
+        {/* Gentle rotating message when final AI polish takes a few extra seconds */}
+        <div className="min-h-[1.5rem] flex items-center justify-center">
+          {showWaiting && !apiResolved && (
             <p
-              key={`waiting-${loopCount}`}
-              className="text-sm text-gray-400 italic animate-text-fade"
+              key={waitingIdx}
+              className="text-sm text-[#7B847E] animate-step-reveal"
             >
-              {waitingLineText}
+              {waitingLines[waitingIdx]}
             </p>
           )}
         </div>
 
-        {/* Step dots — neutral, no green */}
+        {/* Calm step indicator dots */}
         <div className="flex items-center gap-2 mt-1">
           {mindfulSteps.map((_, i) => (
             <div
               key={i}
-              className={`rounded-full transition-all duration-700 ${
+              className={`rounded-full transition-all duration-700 ease-out ${
                 i === processingStep
-                  ? 'w-4 h-1.5 bg-gray-400'
+                  ? 'w-5 h-1.5 bg-[#8AA694]'
                   : i < processingStep
-                  ? 'w-1.5 h-1.5 bg-gray-300'
+                  ? 'w-1.5 h-1.5 bg-[#8AA694]/45'
                   : 'w-1.5 h-1.5 bg-gray-200'
               }`}
             />
           ))}
         </div>
       </div>
-
-      {/* Skip button */}
-      <button
-        onClick={handleSkipMindful}
-        className="fixed bottom-24 sm:bottom-12 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-medium text-gray-400 hover:text-gray-600 transition-colors opacity-0 animate-skip-appear"
-      >
-        <SkipForward size={16} /> Skip animation
-      </button>
     </div>
   );
 }
-
