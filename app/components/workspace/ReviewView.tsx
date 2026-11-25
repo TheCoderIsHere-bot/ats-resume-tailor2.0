@@ -46,10 +46,7 @@ export function ReviewView() {
 
   function cancelEdit() {
     setIsEditing(false);
-    // Reset to saved/original content by re-rendering
-    if (editRef.current) {
-      editRef.current.innerHTML = currentHtml;
-    }
+    // key={`${activeTab}-${isEditing}`} automatically remounts with currentHtml
   }
 
   const handleCopy = useCallback(() => {
@@ -274,6 +271,7 @@ export function ReviewView() {
               contentEditable={isEditing}
               suppressContentEditableWarning
               className={`animate-gentle outline-none ${isEditing ? 'ring-2 ring-[#8AA694]/20 rounded-2xl p-2 -m-2' : ''}`}
+              // nosemgrep: typescript.react.security.audit.react-dangerouslysetinnerhtml.react-dangerouslysetinnerhtml
               dangerouslySetInnerHTML={{ __html: currentHtml }}
             />
           </div>

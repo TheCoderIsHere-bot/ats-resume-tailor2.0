@@ -65,8 +65,8 @@ for (const filePath of sourceFiles) {
     if (/dangerouslySetInnerHTML/.test(line) && rel !== 'app/components/workspace/ReviewView.tsx') {
       fail(`Unvetted dangerouslySetInnerHTML usage at ${ln}`);
     }
-    if (/\.innerHTML\s*=/.test(line) && rel !== 'app/components/workspace/ReviewView.tsx') {
-      fail(`Direct innerHTML assignment outside sanitized editor at ${ln}`);
+    if (/\.innerHTML\s*=/.test(line)) {
+      fail(`Direct innerHTML assignment detected at ${ln}`);
     }
   });
 
@@ -142,9 +142,32 @@ for (const reqHeader of requiredHeaders) {
   }
 }
 
+// 4. Verify GitHub Actions workflows pin third-party actions to 40-char commit SHAs
+const workflowsDir = path.join(ROOT, '.github', 'workflows');
+const workflowFiles = [];
+if (fs.existsSync(workflowsDir)) {
+  for (const name of fs.readdirSync(workflowsDir)) {
+    if (!name.endsWith('.yml') && !name.endsWith('.yaml')) continue;
+    const wfPath = path.join(workflowsDir, name);
+    const wfLines = fs.readFileSync(wfPath, 'utf8').split(/\r?\n/);
+    wfLines.forEach((line, idx) => {
+      const m = line.match(/uses:\s*([^\s#]+)/);
+      if (m) {
+        const ref = m[1];
+        if (!/@[0-9a-f]{40}$/i.test(ref)) {
+          fail(`.github/workflows/${name}:${idx + 1} action "${ref}" is not pinned to a 40-char commit SHA`);
+        }
+      }
+    });
+    workflowFiles.push(wfPath);
+  }
+}
+
 if (errors > 0) {
   console.error(`\nSAST scan failed with ${errors} issue(s).`);
   process.exit(1);
 }
 
-console.log(`SAST scan passed cleanly (${sourceFiles.length} source files & ${apiRoutes.length} API routes verified, 0 issues).`);
+console.log(
+  `SAST scan passed cleanly (${sourceFiles.length} source files, ${apiRoutes.length} API routes & ${workflowFiles.length} workflows verified, 0 issues).`
+);

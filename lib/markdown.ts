@@ -1,5 +1,50 @@
 import { escapeHtmlChars, sanitizeResumeHtml } from '@/lib/htmlSanitizer';
 
+function isWordChar(ch: string | undefined): boolean {
+  return !!ch && /[a-zA-Z0-9_]/.test(ch);
+}
+
+/**
+ * Case-insensitive whole-word keyword highlighter using linear index scanning
+ * (avoids dynamic RegExp construction / ReDoS risks while preserving original casing).
+ */
+function highlightKeywordInText(text: string, kw: string): string {
+  const lowerText = text.toLowerCase();
+  const lowerKw = kw.toLowerCase();
+  const needStartBoundary = isWordChar(kw[0]);
+  const needEndBoundary = isWordChar(kw[kw.length - 1]);
+
+  let out = '';
+  let cursor = 0;
+
+  while (cursor < text.length) {
+    const idx = lowerText.indexOf(lowerKw, cursor);
+    if (idx === -1) {
+      out += text.slice(cursor);
+      break;
+    }
+
+    const before = idx > 0 ? text[idx - 1] : undefined;
+    const after = idx + kw.length < text.length ? text[idx + kw.length] : undefined;
+    const startOk = !needStartBoundary || !isWordChar(before);
+    const endOk = !needEndBoundary || !isWordChar(after);
+
+    if (startOk && endOk) {
+      out +=
+        text.slice(cursor, idx) +
+        '@@HIGHLIGHT@@' +
+        text.slice(idx, idx + kw.length) +
+        '@@ENDHIGHLIGHT@@';
+    } else {
+      out += text.slice(cursor, idx + kw.length);
+    }
+
+    cursor = idx + kw.length;
+  }
+
+  return out;
+}
+
 export function markdownToHtml(markdown: string, matchedKeywords: string[] = []): string {
   if (!markdown) return '';
 
@@ -21,9 +66,7 @@ export function markdownToHtml(markdown: string, matchedKeywords: string[] = [])
           const parts = line.split('**');
           for (let i = 0; i < parts.length; i += 2) {
             for (const kw of validKw) {
-              const escapedRegex = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-              const regex = new RegExp(`\\b(${escapedRegex})\\b`, 'gi');
-              parts[i] = parts[i].replace(regex, '@@HIGHLIGHT@@$1@@ENDHIGHLIGHT@@');
+              parts[i] = highlightKeywordInText(parts[i], kw);
             }
           }
           return parts.join('**');

@@ -12,7 +12,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 
 const ROOT = process.cwd();
 const pkg = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8'));
@@ -74,7 +74,20 @@ console.log(
 // Attempt live npm registry CVE audit (gracefully handle airgapped/offline environments unless --strict)
 const strictOnline = process.argv.includes('--strict');
 try {
-  execSync('npm audit --audit-level=high', { cwd: ROOT, stdio: 'pipe', encoding: 'utf8' });
+  const npmExec = process.env.npm_execpath;
+  if (npmExec && fs.existsSync(npmExec)) {
+    execFileSync(process.execPath, [npmExec, 'audit', '--audit-level=high'], {
+      cwd: ROOT,
+      stdio: 'pipe',
+      encoding: 'utf8',
+    });
+  } else {
+    execFileSync('npm', ['audit', '--audit-level=high'], {
+      cwd: ROOT,
+      stdio: 'pipe',
+      encoding: 'utf8',
+    });
+  }
   console.log('Live npm audit passed cleanly (0 high/critical vulnerabilities).');
 } catch (err) {
   const output = `${err.stdout || ''}\n${err.stderr || ''}`;

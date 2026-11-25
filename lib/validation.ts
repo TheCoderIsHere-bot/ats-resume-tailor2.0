@@ -61,10 +61,13 @@ export function isValidUuid(value: unknown): value is string {
   return typeof value === 'string' && UUID_REGEX.test(value.trim());
 }
 
+const ORDER_ID_REGEX = /^order_[A-Za-z0-9]{6,48}$/;
+const PAY_ID_REGEX = /^pay_[A-Za-z0-9]{6,48}$/;
+
 export function validateRazorpayId(value: unknown, prefix: 'order_' | 'pay_'): string | null {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
-  const pattern = new RegExp(`^${prefix}[A-Za-z0-9]{6,48}$`);
+  const pattern = prefix === 'order_' ? ORDER_ID_REGEX : PAY_ID_REGEX;
   return pattern.test(trimmed) ? trimmed : null;
 }
 

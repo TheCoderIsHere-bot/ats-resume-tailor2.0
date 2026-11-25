@@ -10,7 +10,7 @@
 
 import fs from 'fs';
 import path from 'path';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 
 const ROOT = process.cwd();
 
@@ -32,13 +32,13 @@ const ALLOWED_CLIENT_ENV_VARS = new Set([
   'NODE_ENV',
 ]);
 
-const SERVER_ONLY_SECRETS = [
-  'SUPABASE_SERVICE_ROLE_KEY',
-  'GEMINI_API_KEY',
-  'RAZORPAY_KEY_SECRET',
-  'RAZORPAY_WEBHOOK_SECRET',
-  'SECURITY_ALERT_WEBHOOK_URL',
-  'RAZORPAY_KEY_ID',
+const SERVER_ONLY_SECRET_CHECKS = [
+  { name: 'SUPABASE_SERVICE_ROLE_KEY', regex: /\bSUPABASE_SERVICE_ROLE_KEY\b/ },
+  { name: 'GEMINI_API_KEY', regex: /\bGEMINI_API_KEY\b/ },
+  { name: 'RAZORPAY_KEY_SECRET', regex: /\bRAZORPAY_KEY_SECRET\b/ },
+  { name: 'RAZORPAY_WEBHOOK_SECRET', regex: /\bRAZORPAY_WEBHOOK_SECRET\b/ },
+  { name: 'SECURITY_ALERT_WEBHOOK_URL', regex: /\bSECURITY_ALERT_WEBHOOK_URL\b/ },
+  { name: 'RAZORPAY_KEY_ID', regex: /(?<!NEXT_PUBLIC_)\bRAZORPAY_KEY_ID\b/ },
 ];
 
 const SERVER_ONLY_IMPORTS = [
@@ -53,7 +53,7 @@ const SERVER_ONLY_IMPORTS = [
   '@/lib/docx',
 ];
 
-const SKIP_DIRS = new Set(['node_modules', '.next', '.git']);
+const SKIP_DIRS = new Set(['node_modules', '.next', '.git', '.tmp-sec-test']);
 const TEXT_EXTS = new Set(['.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.json', '.sql', '.md', '.env', '.example']);
 
 function walkFiles(dir, acc = []) {
@@ -73,7 +73,7 @@ let failures = 0;
 
 // 1. Verify .env* files are ignored in git
 try {
-  const trackedFiles = execSync('git ls-files', { cwd: ROOT, encoding: 'utf8' })
+  const trackedFiles = execFileSync('git', ['ls-files'], { cwd: ROOT, encoding: 'utf8' })
     .split(/\r?\n/)
     .filter(Boolean);
   for (const rel of trackedFiles) {
@@ -92,7 +92,6 @@ for (const filePath of allFiles) {
   const base = path.basename(filePath);
   const rel = path.relative(ROOT, filePath);
 
-  // Skip local secret env files themselves (intentionally untracked & gitignored)
   if (/^\.env(?!\.example$)/.test(base)) continue;
 
   const ext = path.extname(filePath).toLowerCase();
@@ -122,16 +121,14 @@ for (const filePath of allFiles) {
         failures++;
       }
     }
-    for (const secretName of SERVER_ONLY_SECRETS) {
-      const rawRefRegex = new RegExp(`(?<!NEXT_PUBLIC_)\\b${secretName}\\b`);
-      if (rawRefRegex.test(content)) {
-        console.error(`[FAIL] Client component ${rel} references server-only secret "${secretName}"`);
+    for (const check of SERVER_ONLY_SECRET_CHECKS) {
+      if (check.regex.test(content)) {
+        console.error(`[FAIL] Client component ${rel} references server-only secret "${check.name}"`);
         failures++;
       }
     }
     for (const serverImport of SERVER_ONLY_IMPORTS) {
-      const importRegex = new RegExp(`from\\s+['"]${serverImport.replace('/', '\\/')}['"]`);
-      if (importRegex.test(content)) {
+      if (content.includes(`'${serverImport}'`) || content.includes(`"${serverImport}"`)) {
         console.error(`[FAIL] Client component ${rel} imports server-only module "${serverImport}"`);
         failures++;
       }
