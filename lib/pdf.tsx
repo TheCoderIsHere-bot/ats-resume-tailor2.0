@@ -7,6 +7,7 @@ import {
   StyleSheet,
   renderToBuffer,
 } from '@react-pdf/renderer';
+import { stripHighlightMarkers } from '@/lib/resumeDiff';
 
 // ─── Register a clean sans-serif font from a CDN-hosted source ───────────────
 // We use the bundled Helvetica fallback; react-pdf handles proper kerning/metrics.
@@ -141,8 +142,9 @@ interface Segment {
 }
 
 function parseSegments(raw: string): Segment[] {
+  const clean = stripHighlightMarkers(raw);
   const segs: Segment[] = [];
-  const parts = raw.split(/\*\*(.+?)\*\*/g);
+  const parts = clean.split(/\*\*(.+?)\*\*/g);
   parts.forEach((p, i) => {
     if (p) segs.push({ text: p, bold: i % 2 === 1 });
   });
@@ -193,18 +195,18 @@ function parseMarkdown(markdown: string): Section[] {
   let lastWasName = false;
 
   for (const raw of lines) {
-    const line = raw.trim();
+    const line = stripHighlightMarkers(raw.trim());
     if (!line) {
       sections.push({ type: 'gap' });
       lastWasName = false;
       continue;
     }
     if (line.startsWith('# ')) {
-      sections.push({ type: 'name', text: line.slice(2) });
+      sections.push({ type: 'name', text: line.slice(2).replace(/\*\*(.+?)\*\*/g, '$1') });
       lastWasName = true;
     } else if (line.startsWith('## ')) {
       inHeader = false; // leaving the header block
-      sections.push({ type: 'heading', text: line.slice(3).toUpperCase() });
+      sections.push({ type: 'heading', text: line.slice(3).replace(/\*\*(.+?)\*\*/g, '$1').toUpperCase() });
       lastWasName = false;
     } else if (line.startsWith('### ')) {
       sections.push({ type: 'subheading', text: line.slice(4) });

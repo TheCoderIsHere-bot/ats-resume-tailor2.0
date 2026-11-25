@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useState, useRef, useCallback } from 'react';
+import React, { useState, useRef, useCallback, useMemo } from 'react';
 import { FileText, Mail, Download, Sparkles, ChevronDown, Pencil, Check, X, Copy } from 'lucide-react';
 import { useApp } from '@/app/context/AppContext';
 import { theme } from '@/lib/theme';
 import { markdownToHtml } from '@/lib/markdown';
+import { annotateResumeChanges, hasHighlightMarkers, stripHighlightMarkers } from '@/lib/resumeDiff';
 import { sanitizeResumeHtml } from '@/lib/htmlSanitizer';
 import { AtsScoreCard } from './AtsScoreCard';
 
@@ -26,7 +27,23 @@ export function ReviewView() {
 
   const editRef = useRef<HTMLDivElement>(null);
 
-  const resumeHtml = editedResume ?? (currentGeneration ? markdownToHtml(currentGeneration.tailored_resume, matchedKeywords) : '');
+  const annotatedResumeMd = useMemo(() => {
+    if (!currentGeneration) return '';
+    if (hasHighlightMarkers(currentGeneration.tailored_resume)) {
+      return currentGeneration.tailored_resume;
+    }
+    if (currentGeneration.original_resume) {
+      return annotateResumeChanges(currentGeneration.original_resume, currentGeneration.tailored_resume);
+    }
+    return currentGeneration.tailored_resume;
+  }, [currentGeneration]);
+
+  const hasResumeHighlights = useMemo(
+    () => hasHighlightMarkers(annotatedResumeMd),
+    [annotatedResumeMd]
+  );
+
+  const resumeHtml = editedResume ?? (annotatedResumeMd ? markdownToHtml(annotatedResumeMd) : '');
   const coverHtml = editedCoverLetter ?? (currentGeneration ? markdownToHtml(currentGeneration.cover_letter) : '');
   const currentHtml = activeTab === 'resume' ? resumeHtml : coverHtml;
 
@@ -55,7 +72,10 @@ export function ReviewView() {
       textToCopy = editRef.current.innerText;
     } else if (currentGeneration) {
       const rawMd = activeTab === 'resume' ? currentGeneration.tailored_resume : currentGeneration.cover_letter;
-      textToCopy = rawMd.replace(/\*\*(.+?)\*\*/g, '$1').replace(/^#+\s+/gm, '').replace(/^[-*]\s+/gm, '• ');
+      textToCopy = stripHighlightMarkers(rawMd)
+        .replace(/\*\*(.+?)\*\*/g, '$1')
+        .replace(/^#+\s+/gm, '')
+        .replace(/^[-*]\s+/gm, '• ');
     }
     if (textToCopy) {
       navigator.clipboard.writeText(textToCopy);
@@ -238,10 +258,10 @@ export function ReviewView() {
                 )}
                 {isEditing ? (
                   <span className="ml-2 text-xs text-[#8AA694] font-medium">● Editing mode — click any text to change it</span>
-                ) : activeTab === 'resume' ? (
+                ) : activeTab === 'resume' && hasResumeHighlights ? (
                   <span className="ml-auto text-xs text-[#556B5D] bg-[#8AA694]/10 px-2.5 py-1 rounded-full font-medium inline-flex items-center gap-1.5">
                     <span className="w-1.5 h-1.5 rounded-full bg-[#8AA694]/70"></span>
-                    Subtle highlights show tailored tweaks &amp; keywords
+                    Subtle highlights show tailored changes
                   </span>
                 ) : null}
               </div>

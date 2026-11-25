@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { generateTailoredContent } from '@/lib/gemini';
 import { extractJDKeywords, scoreResume } from '@/lib/ats-score';
+import { annotateResumeChanges, stripHighlightMarkers } from '@/lib/resumeDiff';
 import {
   rateLimitMulti,
   buildRateLimitHeaders,
@@ -146,21 +147,31 @@ export async function POST(request: NextRequest) {
         }),
       ]);
 
-      const { tailored_resume, cover_letter, job_title, company_name } = tailoredResult;
+      const {
+        tailored_resume: rawTailoredResume,
+        cover_letter,
+        job_title,
+        company_name,
+      } = tailoredResult;
 
-      // 7. Compute before/after scores using the already-extracted keywords
+      const cleanTailoredResume = stripHighlightMarkers(rawTailoredResume);
+
+      // 7. Compute before/after scores on clean tailored markdown before diff annotation
       let scoreBefore = null;
       let scoreAfter = null;
       if (jdKeywords) {
         try {
           const rawBefore = scoreResume(resumeText, jdKeywords);
-          const rawAfter = scoreResume(tailored_resume, jdKeywords);
+          const rawAfter = scoreResume(cleanTailoredResume, jdKeywords);
           if (!rawBefore.insufficientData) scoreBefore = rawBefore;
           if (!rawAfter.insufficientData) scoreAfter = rawAfter;
         } catch (scoreErr) {
           logApiError(request, ROUTE, scoreErr, { userId: user.id, statusCode: 200, context: 'ats_scoring_nonblocking' });
         }
       }
+
+      // Annotate only genuine AI changes against original resume (excluding Education/Certifications/header)
+      const tailored_resume = annotateResumeChanges(resumeText, cleanTailoredResume);
 
       // 8. Atomically deduct token via server-only RPC
       const { data: rpcResult, error: rpcError } = await serviceClient
@@ -170,7 +181,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'Insufficient tokens' }, { status: 402 });
       }
 
-      // 9. Save generation to DB (with persistent scores)
+      // 9. Save generation to DB (with persistent scores and graceful column fallbacks)
       const basePayload = {
         user_id: user.id,
         job_description: jobDescription,
@@ -180,7 +191,7 @@ export async function POST(request: NextRequest) {
         company_name,
       };
 
-      const fullPayload = {
+      const scorePayload = {
         ...basePayload,
         ats_score: scoreAfter?.score ?? null,
         score_before: scoreBefore?.score ?? null,
@@ -189,14 +200,33 @@ export async function POST(request: NextRequest) {
         missed_keywords: scoreAfter?.missedKeywords ?? [],
       };
 
+      const fullPayload = {
+        ...scorePayload,
+        original_resume: resumeText,
+      };
+
+      const isMissingColumnError = (err: { message?: string; code?: string } | null) =>
+        !!err && (err.message?.includes('column') || err.code === '42703' || err.code === 'PGRST204');
+
       let { data: generation, error: genError } = await serviceClient
         .from('generations')
         .insert(fullPayload)
         .select()
         .single();
 
-      // Fallback if score columns have not been added yet in Supabase
-      if (genError && (genError.message?.includes('column') || genError.code === '42703')) {
+      // Fallback 1: if original_resume column isn't in DB yet, still preserve ATS score columns
+      if (isMissingColumnError(genError)) {
+        const retryScores = await serviceClient
+          .from('generations')
+          .insert(scorePayload)
+          .select()
+          .single();
+        generation = retryScores.data;
+        genError = retryScores.error;
+      }
+
+      // Fallback 2: if score columns have not been added yet in Supabase
+      if (isMissingColumnError(genError)) {
         const fallback = await serviceClient
           .from('generations')
           .insert(basePayload)
@@ -216,6 +246,7 @@ export async function POST(request: NextRequest) {
         {
           generation: {
             ...generation,
+            original_resume: generation.original_resume ?? resumeText,
             ats_score: scoreAfter?.score ?? null,
             score_before: scoreBefore?.score ?? null,
             score_breakdown: scoreAfter?.breakdown ?? null,

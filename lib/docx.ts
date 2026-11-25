@@ -9,6 +9,7 @@ import {
   TabStopPosition,
   TabStopType,
 } from 'docx';
+import { stripHighlightMarkers } from '@/lib/resumeDiff';
 
 interface DocxSection {
   type: 'name' | 'contact' | 'heading' | 'subheading' | 'body' | 'bullet' | 'gap';
@@ -34,20 +35,20 @@ function parseMarkdownToDocxSections(markdown: string): DocxSection[] {
   let lastWasName = false;
 
   for (const raw of lines) {
-    const line = raw.trim();
+    const line = stripHighlightMarkers(raw.trim());
     if (!line) { sections.push({ type: 'gap' }); lastWasName = false; continue; }
 
     if (line.startsWith('# ')) {
-      sections.push({ type: 'name', text: line.slice(2) });
+      sections.push({ type: 'name', text: line.slice(2).replace(/\*\*(.+?)\*\*/g, '$1') });
       lastWasName = true;
     } else if (line.startsWith('## ')) {
-      sections.push({ type: 'heading', text: line.slice(3).toUpperCase() });
+      sections.push({ type: 'heading', text: line.slice(3).replace(/\*\*(.+?)\*\*/g, '$1').toUpperCase() });
       lastWasName = false;
     } else if (line.startsWith('### ')) {
       sections.push({ type: 'subheading', text: line.slice(4).replace(/\*\*(.+?)\*\*/g, '$1') });
       lastWasName = false;
     } else if (line.startsWith('- ') || line.startsWith('* ')) {
-      sections.push({ type: 'bullet', text: line.slice(2).replace(/\*\*(.+?)\*\*/g, '$1') });
+      sections.push({ type: 'bullet', text: line.slice(2).replace(/(?<!\*)\*([^*]+?)\*(?!\*)/g, '$1') });
       lastWasName = false;
     } else if (line.startsWith('---')) {
       lastWasName = false;
@@ -56,7 +57,7 @@ function parseMarkdownToDocxSections(markdown: string): DocxSection[] {
       if (lastWasName || isContactLine(cleanText)) {
         sections.push({ type: 'contact', text: cleanText });
       } else {
-        sections.push({ type: 'body', text: cleanText });
+        sections.push({ type: 'body', text: line.replace(/(?<!\*)\*([^*]+?)\*(?!\*)/g, '$1') });
       }
       lastWasName = false;
     }
@@ -66,9 +67,10 @@ function parseMarkdownToDocxSections(markdown: string): DocxSection[] {
 }
 
 function buildTextRuns(text: string): TextRun[] {
-  // Parse bold markdown: **text** becomes bold
+  // Strip any leftover highlight markers and parse bold markdown (**text**)
+  const clean = stripHighlightMarkers(text);
   const runs: TextRun[] = [];
-  const parts = text.split(/(\*\*.+?\*\*)/g);
+  const parts = clean.split(/(\*\*.+?\*\*)/g);
   for (const part of parts) {
     if (part.startsWith('**') && part.endsWith('**')) {
       runs.push(new TextRun({ text: part.slice(2, -2), bold: true }));
@@ -76,7 +78,7 @@ function buildTextRuns(text: string): TextRun[] {
       runs.push(new TextRun({ text: part }));
     }
   }
-  return runs.length > 0 ? runs : [new TextRun({ text })];
+  return runs.length > 0 ? runs : [new TextRun({ text: clean })];
 }
 
 export async function generateDocx(markdown: string): Promise<Uint8Array> {

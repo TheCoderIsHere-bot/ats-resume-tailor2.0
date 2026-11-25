@@ -19,6 +19,7 @@ import {
   validateAndSanitizeText,
 } from '@/lib/validation';
 import { sanitizeResumeHtml } from '@/lib/htmlSanitizer';
+import { stripHighlightMarkers } from '@/lib/resumeDiff';
 
 const ROUTE = '/api/download';
 
@@ -38,17 +39,23 @@ function htmlToMarkdown(html: string): string {
   md = md.replace(/<h2[^>]*>(.*?)<\/h2>/gi, '## $1');
   md = md.replace(/<h3[^>]*>(.*?)<\/h3>/gi, '### $1');
 
-  // Bold: <strong>…</strong> or <b>…</b> → **…**
-  md = md.replace(/<(strong|b)>(.*?)<\/\1>/gi, '**$2**');
+  // Unwrap inline highlight markers (<mark>) cleanly without breaking lines
+  md = md.replace(/<mark[^>]*>([\s\S]*?)<\/mark>/gi, '$1');
+
+  // Bold: <strong>…</strong> or <b>…</b> (including styled attributes) → **…**
+  md = md.replace(/<(strong|b)(?:\s[^>]*)?>([\s\S]*?)<\/\1>/gi, '**$2**');
 
   // Italic: <em>…</em> or <i>…</i> → *…*
-  md = md.replace(/<(em|i)>(.*?)<\/\1>/gi, '*$2*');
+  md = md.replace(/<(em|i)(?:\s[^>]*)?>([\s\S]*?)<\/\1>/gi, '*$2*');
 
-  // List items: <li>…</li> → - …
-  md = md.replace(/<li[^>]*>(.*?)<\/li>/gi, '- $1');
+  // List items: <li>…</li> (stripping rendered bullet glyph span if present) → - …
+  md = md.replace(/<li[^>]*>(?:\s*<span[^>]*>\s*\u2022\s*<\/span>\s*)?([\s\S]*?)<\/li>/gi, '- $1');
 
-  // Strip remaining tags (ul, ol, p, div, span, etc.) — keep their inner text
-  md = md.replace(/<\/?(ul|ol|div|span|p|section|article|header|footer|nav)[^>]*>/gi, '\n');
+  // Strip inline <span> wrappers cleanly without introducing newlines
+  md = md.replace(/<\/?span[^>]*>/gi, '');
+
+  // Block tags → newline
+  md = md.replace(/<\/?(ul|ol|div|p|section|article|header|footer|nav)[^>]*>/gi, '\n');
 
   // Decode common HTML entities
   md = md.replace(/&amp;/g, '&');
@@ -182,10 +189,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Generation not found or access denied.' }, { status: 404 });
     }
 
-    // Use user-edited HTML if present; otherwise use the verified original from DB
-    const markdown = safeEditedHtml
-      ? htmlToMarkdown(safeEditedHtml)
-      : (type === 'resume' ? generation.tailored_resume : generation.cover_letter);
+    // Use user-edited HTML if present; otherwise use the verified original from DB (stripping any ==...== highlight markers)
+    const markdown = stripHighlightMarkers(
+      safeEditedHtml
+        ? htmlToMarkdown(safeEditedHtml)
+        : (type === 'resume' ? generation.tailored_resume : generation.cover_letter)
+    );
 
     const filename = type === 'resume' ? 'tailored_resume' : 'cover_letter';
 

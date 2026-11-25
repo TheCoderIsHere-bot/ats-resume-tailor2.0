@@ -26,6 +26,7 @@ const FILES_TO_COMPILE = [
   'lib/types.ts',
   'lib/validation.ts',
   'lib/htmlSanitizer.ts',
+  'lib/resumeDiff.ts',
   'lib/markdown.ts',
   'lib/parseResume.ts',
   'lib/trafficMonitor.ts',
@@ -81,6 +82,7 @@ async function runSuite() {
 
   const validation = req(path.join(TMP_DIR, 'lib/validation.js'));
   const htmlSanitizer = req(path.join(TMP_DIR, 'lib/htmlSanitizer.js'));
+  const resumeDiff = req(path.join(TMP_DIR, 'lib/resumeDiff.js'));
   const markdown = req(path.join(TMP_DIR, 'lib/markdown.js'));
   const parseResume = req(path.join(TMP_DIR, 'lib/parseResume.js'));
   const rateLimit = req(path.join(TMP_DIR, 'lib/rateLimit.js'));
@@ -355,6 +357,88 @@ async function runSuite() {
       if (origSecret === undefined) delete process.env.RAZORPAY_WEBHOOK_SECRET;
       else process.env.RAZORPAY_WEBHOOK_SECRET = origSecret;
     }
+  });
+
+  // 8. Diff Highlighting Accuracy & Separation of Bold Typography
+  await check('Diff highlighter excludes unchanged text, Education institutes & Certifications while rendering clean marks', () => {
+    const originalResume = [
+      'JANE DOE',
+      'Email: jane@example.com | LinkedIn: linkedin.com/in/janedoe',
+      'SUMMARY',
+      'Data Analyst with 2+ years of experience building pipelines with Python and SQL.',
+      'EXPERIENCE',
+      '• Built ETL scripts',
+      'in Python and PostgreSQL for daily analytics reporting.',
+      '• Reduced API latency by 40% by indexing PostgreSQL tables.',
+      'TECHNICAL SKILLS',
+      'Python, SQL, Docker',
+      'EDUCATION',
+      'B.E. Computer Science, University of Mumbai, 2019 - 2023',
+      'CERTIFICATIONS',
+      'Google Cloud Professional Data Engineer',
+    ].join('\n');
+
+    const tailoredResume = [
+      '# JANE DOE',
+      'Email: jane@example.com | LinkedIn: linkedin.com/in/janedoe',
+      '',
+      '## SUMMARY',
+      'Results-driven Data Engineer with 2+ years of experience building scalable ETL pipelines with Python, SQL, and data observability.',
+      '',
+      '## EXPERIENCE',
+      '- Built ETL scripts in Python and PostgreSQL for daily analytics reporting.',
+      '- Indexed PostgreSQL tables, reducing API latency by 40%.',
+      '- Spearheaded Apache Airflow orchestration for real-time ingestion.',
+      '',
+      '## TECHNICAL SKILLS',
+      '- **Core Stack:** SQL, Docker, Python, Snowflake',
+      '',
+      '## EDUCATION',
+      '**B.E. in Computer Science** — **University of Mumbai** | 2019 - 2023',
+      '',
+      '## CERTIFICATIONS',
+      '- **Google Cloud Professional Data Engineer**',
+    ].join('\n');
+
+    const annotated = resumeDiff.annotateResumeChanges(originalResume, tailoredResume);
+    const stripped = resumeDiff.stripHighlightMarkers(annotated);
+    assert.equal(stripped, tailoredResume);
+
+    const eduSection = annotated.split('## EDUCATION')[1];
+    assert.equal(resumeDiff.hasHighlightMarkers(eduSection), false);
+
+    const headerSection = annotated.split('## SUMMARY')[0];
+    assert.equal(resumeDiff.hasHighlightMarkers(headerSection), false);
+
+    // Unchanged wrapped bullet and reordered latency bullet should not contain highlights
+    const expLines = annotated.split('\n');
+    const summaryLine = expLines.find((l) => l.includes('2+ years of experience'));
+    const unchangedBullet = expLines.find((l) => l.includes('daily analytics reporting'));
+    const reorderedBullet = expLines.find((l) => l.includes('reducing API latency'));
+    const addedBullet = expLines.find((l) => l.includes('Apache Airflow'));
+    const skillsLine = expLines.find((l) => l.includes('Core Stack'));
+
+    assert.ok(summaryLine, 'expected summary line');
+    assert.equal(summaryLine.includes('==Results-driven=='), true, `summaryLine was: ${summaryLine}`);
+    assert.equal(summaryLine.includes('==Engineer=='), true, `summaryLine was: ${summaryLine}`);
+    assert.equal(summaryLine.includes('==scalable ETL=='), true, `summaryLine was: ${summaryLine}`);
+    assert.equal(summaryLine.includes('==data observability=='), true, `summaryLine was: ${summaryLine}`);
+    assert.equal(summaryLine.includes('==Python=='), false, `summaryLine was: ${summaryLine}`);
+    assert.equal(summaryLine.includes('==SQL=='), false, `summaryLine was: ${summaryLine}`);
+    assert.equal(resumeDiff.hasHighlightMarkers(unchangedBullet), false);
+    assert.equal(resumeDiff.hasHighlightMarkers(reorderedBullet), false);
+    assert.equal(addedBullet.includes('==Spearheaded Apache Airflow orchestration for real-time ingestion=='), true, `addedBullet was: ${addedBullet}`);
+    assert.equal(skillsLine.includes('==Snowflake=='), true);
+    assert.equal(skillsLine.includes('==SQL=='), false);
+    assert.equal(skillsLine.includes('==Python=='), false);
+    assert.equal(skillsLine.includes('==Core Stack'), false);
+
+    // Bold **...** renders as clean strong without green highlight; ==...== renders as subtle <mark>
+    const html = markdown.markdownToHtml(annotated);
+    assert.equal(html.includes('<strong class="font-semibold text-[#222222]">University of Mumbai</strong>'), true);
+    assert.equal(html.includes('<strong class="font-semibold text-[#222222]">Google Cloud Professional Data Engineer</strong>'), true);
+    assert.equal(html.includes('<mark class="font-medium text-[#1F3629] bg-[#8AA694]/10 rounded-[3px] px-[2px]"'), true);
+    assert.equal(html.includes('bg-[#EAF5EF]'), false);
   });
 
   console.log(`\nSecurity verification suite passed (${passed}/${passed} checks green).`);

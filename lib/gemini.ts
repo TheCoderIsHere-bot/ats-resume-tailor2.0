@@ -19,10 +19,11 @@ INPUT:
 RULES:
 - DO NOT invent any new work experience, degrees, or skills the candidate does not actually possess.
 - The input resume text may contain garbled characters or symbols (such as \u00d3, \u2122, Q, \u02c6, \u2021, \u00a1, \ufffd, etc.) caused by PDF font extraction. These are usually icons for phone, email, location, LinkedIn, GitHub, etc. Clean them up: remove them entirely or replace with standard text labels (e.g. "Email:", "Phone:", "LinkedIn:", "GitHub:"). Never include garbled or non-standard characters in the output.
+- Preserve factual sections accurately: keep Education (institution names, degrees, dates, grades) and Certifications (exact credential names and issuing bodies) faithful to the candidate's Master Resume without rewriting or embellishing them.
 - Rewrite the "Professional Summary" to align heavily with the tone and requirements of the Job Description.
 - Seamlessly integrate exact keywords from the Job Description into the bullet points.
 - If the context of the existing experience supports it, reframe bullet points to emphasize the most relevant skills and outcomes for the target role.
-- HIGHLIGHT ALL TWEAKS & KEYWORDS: Wrap every newly integrated keyword from the job description, revised phrasing, and tailored bullet point tweak in bold markdown (**like this**) so the user can easily see what was enhanced and adapted.
+- Use bold markdown (**like this**) strictly for standard resume formatting (such as job titles, companies, skill category labels, institutions, degrees, and certifications) — never use **bold** or ==markers== to highlight edits; changes are diffed automatically.
 - Format the output in clean Markdown with clear section headers (##).
 - Additionally, write a concise, 3-paragraph Cover Letter addressed to the Hiring Manager based on the aligned skills.
 

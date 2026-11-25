@@ -1,7 +1,7 @@
 import DOMPurify from 'isomorphic-dompurify';
 
 const SAFE_HTML_TAGS = [
-  'h1', 'h2', 'h3', 'p', 'br', 'strong', 'b', 'em', 'i', 'ul', 'ol', 'li', 'hr', 'div', 'span',
+  'h1', 'h2', 'h3', 'p', 'br', 'strong', 'b', 'em', 'i', 'ul', 'ol', 'li', 'hr', 'div', 'span', 'mark',
 ];
 
 const SAFE_HTML_ATTRS = ['class', 'title'];

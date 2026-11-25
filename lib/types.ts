@@ -13,6 +13,7 @@ export interface Generation {
   id: string;
   job_description: string;
   tailored_resume: string;
+  original_resume?: string | null;
   cover_letter: string;
   created_at: string;
   job_title?: string;
