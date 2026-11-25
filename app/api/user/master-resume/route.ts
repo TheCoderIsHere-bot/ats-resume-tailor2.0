@@ -58,14 +58,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const formData = await request.formData();
-    const file = formData.get('file') as File | null;
+    let formData: FormData;
+    try {
+      formData = await request.formData();
+    } catch {
+      return NextResponse.json({ error: 'Invalid multipart form upload.' }, { status: 400 });
+    }
+    const rawFile = formData.get('file');
 
-    if (!file) {
-      return NextResponse.json({ error: 'No file provided.' }, { status: 400 });
+    if (!(rawFile instanceof File)) {
+      return NextResponse.json({ error: 'Valid file upload is required.' }, { status: 400 });
     }
 
-    const parsed = await parseResumeFile(file);
+    const parsed = await parseResumeFile(rawFile);
     if (!parsed.ok) {
       if (parsed.securityViolation) {
         logSecurityEvent({

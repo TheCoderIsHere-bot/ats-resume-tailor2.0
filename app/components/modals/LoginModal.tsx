@@ -139,6 +139,7 @@ export function LoginModal() {
                 name="email"
                 type="email"
                 required
+                maxLength={254}
                 placeholder="your@email.com"
                 onChange={() => setAuthError(null)}
                 className="w-full px-4 py-3.5 rounded-2xl border border-gray-200 text-[#333333] text-sm outline-none focus:border-[#8AA694] transition-colors"

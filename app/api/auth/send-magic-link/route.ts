@@ -17,6 +17,7 @@ import {
   logSecurityEvent,
 } from '@/lib/securityLogger';
 import { detectFormBotSubmission, recordSuspiciousSignal } from '@/lib/trafficMonitor';
+import { parseJsonObject, hasOnlyAllowedKeys } from '@/lib/validation';
 
 const ROUTE = '/api/auth/send-magic-link';
 
@@ -60,7 +61,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const body = (await request.json()) as Record<string, unknown>;
+    const parsedBody = await parseJsonObject(request);
+    if (!parsedBody.ok) {
+      return NextResponse.json({ error: parsedBody.error }, { status: 400 });
+    }
+    const body = parsedBody.data;
+    if (!hasOnlyAllowedKeys(body, ['email', '_hp', '_ts'])) {
+      return NextResponse.json({ error: 'Unexpected fields in request body.' }, { status: 400 });
+    }
+    if (
+      (body._hp !== undefined && typeof body._hp !== 'string') ||
+      (body._ts !== undefined && typeof body._ts !== 'number')
+    ) {
+      return NextResponse.json({ error: 'Invalid input types.' }, { status: 400 });
+    }
 
     // 2. Automated Bot Form Trap (honeypot + submission timing)
     const botReason = detectFormBotSubmission(body);

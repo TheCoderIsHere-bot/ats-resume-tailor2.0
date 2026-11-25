@@ -175,7 +175,7 @@ export function LandingPage() {
                   onChange={(e) => setLeadHoneypot(e.target.value)}
                 />
               </div>
-              <input type="email" required value={leadEmail} onChange={(e) => setLeadEmail(e.target.value)} placeholder="your@email.com" className="flex-1 px-5 py-3.5 rounded-2xl border border-gray-200 text-[#333333] text-sm outline-none focus:border-[#8AA694] transition-colors" />
+              <input type="email" required maxLength={254} value={leadEmail} onChange={(e) => setLeadEmail(e.target.value)} placeholder="your@email.com" className="flex-1 px-5 py-3.5 rounded-2xl border border-gray-200 text-[#333333] text-sm outline-none focus:border-[#8AA694] transition-colors" />
               <button type="submit" disabled={leadLoading} className={`px-8 py-3.5 rounded-2xl ${theme.accentSage} ${theme.accentSageHover} text-white text-sm font-medium transition-all shadow-sm disabled:opacity-60`}>{leadLoading ? 'Sending\u2026' : 'Get Sample'}</button>
             </form>
           )}

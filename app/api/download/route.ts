@@ -12,15 +12,23 @@ import {
   logSecurityEvent,
 } from '@/lib/securityLogger';
 import { recordSuspiciousSignal } from '@/lib/trafficMonitor';
+import {
+  parseJsonObject,
+  hasOnlyAllowedKeys,
+  isValidUuid,
+  validateAndSanitizeText,
+} from '@/lib/validation';
+import { sanitizeResumeHtml } from '@/lib/htmlSanitizer';
 
 const ROUTE = '/api/download';
 
 /**
  * Convert edited HTML back to markdown for PDF/DOCX generation.
- * Handles the HTML tags produced by contentEditable + our markdownToHtml().
+ * Strictly sanitizes HTML (removing script/style/iframe blocks) before tag conversion.
  */
 function htmlToMarkdown(html: string): string {
-  let md = html;
+  // Sanitize first via DOMPurify so <script>alert(1)</script> never leaks inner text into PDF/DOCX
+  let md = sanitizeResumeHtml(html);
 
   // Normalize <br> tags to newlines
   md = md.replace(/<br\s*\/?>/gi, '\n');
@@ -105,25 +113,43 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const body = await request.json();
-    const { generationId, type, format = 'pdf', editedHtml } = body as {
-      generationId: string;
-      type: 'resume' | 'cover_letter';
-      format?: 'pdf' | 'docx';
-      editedHtml?: string | null;
+    const parsedBody = await parseJsonObject(request);
+    if (!parsedBody.ok) {
+      return NextResponse.json({ error: parsedBody.error }, { status: 400 });
+    }
+    if (!hasOnlyAllowedKeys(parsedBody.data, ['generationId', 'type', 'format', 'editedHtml'])) {
+      return NextResponse.json({ error: 'Unexpected fields in request body.' }, { status: 400 });
+    }
+
+    const { generationId, type, format = 'pdf', editedHtml } = parsedBody.data as {
+      generationId?: unknown;
+      type?: unknown;
+      format?: unknown;
+      editedHtml?: unknown;
     };
 
-    if (!generationId || typeof generationId !== 'string') {
-      return NextResponse.json({ error: 'Invalid or missing generationId' }, { status: 400 });
+    if (!isValidUuid(generationId)) {
+      return NextResponse.json({ error: 'Invalid or missing generationId.' }, { status: 400 });
     }
     if (type !== 'resume' && type !== 'cover_letter') {
-      return NextResponse.json({ error: 'Invalid document type requested' }, { status: 400 });
+      return NextResponse.json({ error: 'Invalid document type requested.' }, { status: 400 });
     }
     if (format !== 'pdf' && format !== 'docx') {
-      return NextResponse.json({ error: 'Invalid format requested' }, { status: 400 });
+      return NextResponse.json({ error: 'Invalid format requested.' }, { status: 400 });
     }
-    if (editedHtml && (typeof editedHtml !== 'string' || editedHtml.length > 200000)) {
-      return NextResponse.json({ error: 'Edited content exceeds maximum length' }, { status: 400 });
+
+    let safeEditedHtml: string | null = null;
+    if (editedHtml !== undefined && editedHtml !== null) {
+      const htmlTextCheck = validateAndSanitizeText(editedHtml, {
+        minLength: 1,
+        maxLength: 200000,
+        allowNewlines: true,
+        label: 'Edited content',
+      });
+      if (!htmlTextCheck.ok) {
+        return NextResponse.json({ error: htmlTextCheck.error }, { status: 400 });
+      }
+      safeEditedHtml = htmlTextCheck.text;
     }
 
     // Strict IDOR Prevention: Verify that generationId exists and belongs to the authenticated user
@@ -157,8 +183,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Use user-edited HTML if present; otherwise use the verified original from DB
-    const markdown = editedHtml
-      ? htmlToMarkdown(editedHtml)
+    const markdown = safeEditedHtml
+      ? htmlToMarkdown(safeEditedHtml)
       : (type === 'resume' ? generation.tailored_resume : generation.cover_letter);
 
     const filename = type === 'resume' ? 'tailored_resume' : 'cover_letter';

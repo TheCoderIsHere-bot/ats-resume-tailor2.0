@@ -11,9 +11,28 @@ export function DeskView() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   function handleFileSelect(file: File) {
-    const allowed = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
-    if (!allowed.includes(file.type)) { setError('Please upload a PDF or Word (.docx) file.'); return; }
-    setResumeFile(file); setError(null);
+    const lowerName = file.name.toLowerCase();
+    const isValidExt = lowerName.endsWith('.pdf') || lowerName.endsWith('.docx');
+    const allowedMimes = [
+      'application/pdf',
+      'application/x-pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      '',
+    ];
+    if (!isValidExt || !allowedMimes.includes(file.type.toLowerCase())) {
+      setError('Please upload a valid .pdf or Word (.docx) file.');
+      return;
+    }
+    if (file.size < 100) {
+      setError('Uploaded file appears empty or corrupted.');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      setError('File is too large. Maximum allowed size is 5MB.');
+      return;
+    }
+    setResumeFile(file);
+    setError(null);
   }
 
   function handleDrop(e: React.DragEvent) {
@@ -56,7 +75,7 @@ export function DeskView() {
         </div>
         <div className={`${theme.bgSurface} ${theme.roundedSoft} ${theme.shadowSoft} p-6 sm:p-10 flex flex-col min-h-[260px] sm:min-h-[320px] border border-transparent hover:border-gray-100 transition-all duration-300`}>
           <div className="flex items-center gap-3 mb-6"><div className="w-10 h-10 rounded-full bg-gray-50 flex items-center justify-center"><UploadCloud size={18} className="text-gray-500" /></div><h3 className="text-xl font-semibold">Paste the job description</h3></div>
-          <textarea value={jdText} onChange={(e) => setJdText(e.target.value)} placeholder="Paste the requirements and responsibilities for the role you are targeting..." className="flex-1 w-full bg-gray-50/50 hover:bg-gray-50 rounded-2xl p-6 text-sm text-[#333333] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#8AA694]/20 focus:bg-white resize-none transition-all duration-300 border border-transparent" />
+          <textarea value={jdText} onChange={(e) => setJdText(e.target.value)} maxLength={30000} placeholder="Paste the requirements and responsibilities for the role you are targeting..." className="flex-1 w-full bg-gray-50/50 hover:bg-gray-50 rounded-2xl p-6 text-sm text-[#333333] placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-[#8AA694]/20 focus:bg-white resize-none transition-all duration-300 border border-transparent" />
         </div>
       </div>
       <div className={`mt-16 transition-all duration-700 ease-in-out ${isReadyToCraft ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-8 pointer-events-none'}`}>

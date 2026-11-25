@@ -28,7 +28,7 @@ export function ArchiveView() {
       {generations.length > 0 && (
         <div className="relative mb-6">
           <Search size={16} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
-          <input type="text" value={archiveSearch} onChange={(e) => setArchiveSearch(e.target.value)} placeholder="Search by job title, company, or description..." className="w-full pl-10 pr-4 py-3 rounded-2xl border border-gray-200 text-sm text-[#333333] placeholder-gray-400 focus:outline-none focus:border-[#8AA694] transition-colors" />
+          <input type="text" value={archiveSearch} onChange={(e) => setArchiveSearch(e.target.value)} maxLength={120} placeholder="Search by job title, company, or description..." className="w-full pl-10 pr-4 py-3 rounded-2xl border border-gray-200 text-sm text-[#333333] placeholder-gray-400 focus:outline-none focus:border-[#8AA694] transition-colors" />
         </div>
       )}
 

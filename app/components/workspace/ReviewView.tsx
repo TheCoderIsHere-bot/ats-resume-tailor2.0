@@ -2,10 +2,10 @@
 
 import React, { useState, useRef, useCallback } from 'react';
 import { FileText, Mail, Download, Sparkles, ChevronDown, Pencil, Check, X, Copy } from 'lucide-react';
-import DOMPurify from 'isomorphic-dompurify';
 import { useApp } from '@/app/context/AppContext';
 import { theme } from '@/lib/theme';
 import { markdownToHtml } from '@/lib/markdown';
+import { sanitizeResumeHtml } from '@/lib/htmlSanitizer';
 import { AtsScoreCard } from './AtsScoreCard';
 
 export function ReviewView() {
@@ -38,7 +38,7 @@ export function ReviewView() {
 
   function saveEdit() {
     if (!editRef.current) return;
-    const cleanHtml = DOMPurify.sanitize(editRef.current.innerHTML, { ADD_ATTR: ['class', 'title'] });
+    const cleanHtml = sanitizeResumeHtml(editRef.current.innerHTML);
     if (activeTab === 'resume') setEditedResume(cleanHtml);
     else setEditedCoverLetter(cleanHtml);
     setIsEditing(false);

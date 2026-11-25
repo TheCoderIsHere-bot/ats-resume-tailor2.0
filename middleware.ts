@@ -11,6 +11,7 @@ import {
   banIpTemporarily,
 } from '@/lib/trafficMonitor';
 import { getClientIp, getRequestId, logSecurityEvent } from '@/lib/securityLogger';
+import { detectUnsafeQueryString } from '@/lib/validation';
 
 const MAX_UPLOAD_BYTES = 6 * 1024 * 1024; // 6 MB (covers 5 MB file + multipart boundary overhead)
 const MAX_DOC_API_BYTES = 512 * 1024; // 512 KB (covers max 50k resume + 30k JD + 200k editedHtml)
@@ -64,22 +65,28 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  // 3. Detect & block recon, path traversal, and vulnerability scanner probes
+  // 3. Detect & block recon, path traversal, scanner probes, and malicious query params
   const probeReason = detectSuspiciousProbe(pathname, userAgent);
-  if (probeReason) {
+  const unsafeQuery = (pathname.startsWith('/api/') || pathname.startsWith('/auth/'))
+    ? detectUnsafeQueryString(request.nextUrl.search)
+    : null;
+  if (probeReason || unsafeQuery) {
     recordSuspiciousSignal(ip, 'BOT_PROBE');
     logSecurityEvent({
-      eventType: 'TRAFFIC_ANOMALY',
+      eventType: unsafeQuery ? 'SECURITY_VIOLATION' : 'TRAFFIC_ANOMALY',
       severity: 'warn',
       route: pathname,
       method: request.method,
       ip,
       userAgent,
       requestId,
-      statusCode: 404,
-      details: { anomaly: probeReason },
+      statusCode: unsafeQuery ? 400 : 404,
+      details: { anomaly: unsafeQuery ?? probeReason },
     });
-    return NextResponse.json({ error: 'Not found' }, { status: 404 });
+    return NextResponse.json(
+      { error: unsafeQuery ? 'Invalid request parameters' : 'Not found' },
+      { status: unsafeQuery ? 400 : 404 }
+    );
   }
 
   // 4. Block automated scripts, scrapers, and missing User-Agent bots (never block external webhooks)

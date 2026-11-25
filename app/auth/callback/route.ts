@@ -4,12 +4,24 @@ import { createClient } from '@/lib/supabase/server';
 import { rateLimit, buildRateLimitHeaders, getRateLimitKey } from '@/lib/rateLimit';
 import { getAppOrigin } from '@/lib/env';
 import { logAuthEvent, logRateLimitExceeded, logApiError } from '@/lib/securityLogger';
+import { detectUnsafeQueryString, sanitizeRelativeRedirectPath } from '@/lib/validation';
 
 const ROUTE = '/auth/callback';
+const AUTH_CODE_REGEX = /^[A-Za-z0-9\-_.]{6,512}$/;
 
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url);
   const origin = getAppOrigin(request);
+
+  // 0. Reject unsafe query parameters immediately
+  if (detectUnsafeQueryString(requestUrl.search)) {
+    logAuthEvent(request, 'AUTH_FAILURE', {
+      route: ROUTE,
+      reason: 'unsafe_query_parameter',
+      statusCode: 400,
+    });
+    return NextResponse.redirect(`${origin}/?error=invalid_request`);
+  }
 
   // 1. Rate limit callback exchanges (max 20 per IP per 10 minutes) to prevent code brute-forcing
   const rl = rateLimit(getRateLimitKey(request, ':auth-callback'), { limit: 20, windowMs: 10 * 60 * 1000 });
@@ -29,27 +41,34 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  // 2. Check for upstream OAuth provider errors (e.g., user denied permission, invalid grant)
-  const oauthError = requestUrl.searchParams.get('error');
-  if (oauthError) {
+  // 2. Check for upstream OAuth provider errors (sanitized token)
+  const rawOauthError = requestUrl.searchParams.get('error');
+  if (rawOauthError) {
+    const safeErrorCode = rawOauthError.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64) || 'oauth_error';
     logAuthEvent(request, 'AUTH_FAILURE', {
       route: ROUTE,
-      reason: `oauth_provider_error:${oauthError}`,
+      reason: `oauth_provider_error:${safeErrorCode}`,
       statusCode: 400,
     });
-    return NextResponse.redirect(`${origin}/?error=${encodeURIComponent(oauthError)}`);
+    return NextResponse.redirect(`${origin}/?error=${encodeURIComponent(safeErrorCode)}`);
   }
 
   const code = requestUrl.searchParams.get('code');
-  const rawNext = requestUrl.searchParams.get('next') ?? '/';
+  const rawNext = requestUrl.searchParams.get('next');
 
-  // 3. Prevent Open Redirect: only allow strict relative paths on the same origin
-  const safeNext =
-    rawNext.startsWith('/') && !rawNext.startsWith('//') && !rawNext.includes('\\')
-      ? rawNext
-      : '/';
+  // 3. Strict same-origin relative path check to eliminate Open Redirect & path traversal
+  const safeNext = sanitizeRelativeRedirectPath(rawNext, origin);
 
-  if (code && typeof code === 'string' && code.length >= 6 && code.length <= 512) {
+  if (code) {
+    if (!AUTH_CODE_REGEX.test(code)) {
+      logAuthEvent(request, 'AUTH_FAILURE', {
+        route: ROUTE,
+        reason: 'malformed_auth_code',
+        statusCode: 400,
+      });
+      return NextResponse.redirect(`${origin}/?error=invalid_code`);
+    }
+
     logAuthEvent(request, 'AUTH_ATTEMPT', {
       route: ROUTE,
       reason: 'code_exchange',
@@ -83,13 +102,6 @@ export async function GET(request: NextRequest) {
       });
       return NextResponse.redirect(`${origin}/?error=server_error`);
     }
-  } else if (code) {
-    logAuthEvent(request, 'AUTH_FAILURE', {
-      route: ROUTE,
-      reason: 'malformed_auth_code',
-      statusCode: 400,
-    });
-    return NextResponse.redirect(`${origin}/?error=invalid_code`);
   }
 
   return NextResponse.redirect(new URL(safeNext, origin));

@@ -9,6 +9,7 @@ import {
   logSecurityEvent,
 } from '@/lib/securityLogger';
 import { recordSuspiciousSignal } from '@/lib/trafficMonitor';
+import { isPlainObject, isValidUuid, validateRazorpayId } from '@/lib/validation';
 
 const ROUTE = '/api/webhooks/razorpay';
 const TOKENS_PER_BUNDLE = 10;
@@ -75,20 +76,50 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
     }
 
-    const payload = JSON.parse(rawBody);
-    const event = payload.event as string;
+    let payload: Record<string, unknown>;
+    try {
+      const parsed: unknown = JSON.parse(rawBody);
+      if (!isPlainObject(parsed)) {
+        return NextResponse.json({ error: 'Invalid webhook payload shape' }, { status: 400 });
+      }
+      payload = parsed;
+    } catch {
+      return NextResponse.json({ error: 'Malformed JSON payload' }, { status: 400 });
+    }
+
+    const event = typeof payload.event === 'string' ? payload.event : '';
 
     if (event === 'payment.captured') {
-      const payment = payload.payload?.payment?.entity;
-      const orderId = payment?.order_id as string;
-      const paymentId = payment?.id as string;
-      const userId = payment?.notes?.user_id as string;
-      const tokensToAdd = parseInt(payment?.notes?.tokens_to_add ?? String(TOKENS_PER_BUNDLE), 10);
-      const amountPaise = payment?.amount as number;
+      const paymentWrapper = isPlainObject(payload.payload) ? payload.payload : null;
+      const paymentContainer = paymentWrapper && isPlainObject(paymentWrapper.payment) ? paymentWrapper.payment : null;
+      const payment = paymentContainer && isPlainObject(paymentContainer.entity) ? paymentContainer.entity : null;
+      const notes = payment && isPlainObject(payment.notes) ? payment.notes : null;
 
-      if (!userId || !orderId || !paymentId) {
-        logApiError(request, ROUTE, new Error('Missing payment metadata'), { statusCode: 400 });
-        return NextResponse.json({ error: 'Missing payment metadata' }, { status: 400 });
+      const orderId = validateRazorpayId(payment?.order_id, 'order_');
+      const paymentId = validateRazorpayId(payment?.id, 'pay_');
+      const userId = isValidUuid(notes?.user_id) ? notes.user_id.trim() : null;
+      const rawTokens = notes?.tokens_to_add;
+      const tokensToAdd =
+        typeof rawTokens === 'number'
+          ? rawTokens
+          : typeof rawTokens === 'string'
+            ? Number.parseInt(rawTokens, 10)
+            : TOKENS_PER_BUNDLE;
+      const amountPaise = payment?.amount;
+
+      if (
+        !userId ||
+        !orderId ||
+        !paymentId ||
+        !Number.isInteger(tokensToAdd) ||
+        tokensToAdd <= 0 ||
+        tokensToAdd > 1000 ||
+        typeof amountPaise !== 'number' ||
+        !Number.isFinite(amountPaise) ||
+        amountPaise < 100
+      ) {
+        logApiError(request, ROUTE, new Error('Invalid or missing payment metadata'), { statusCode: 400 });
+        return NextResponse.json({ error: 'Invalid payment metadata' }, { status: 400 });
       }
 
       const supabase = await createServiceClient();

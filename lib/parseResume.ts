@@ -1,13 +1,30 @@
+import { assertServerOnly } from '@/lib/env';
+import { validateAndSanitizeText } from '@/lib/validation';
+
+assertServerOnly('lib/parseResume');
+
 /**
  * Shared Resume File Validation & Extraction Helper
  *
  * Enforces:
- * - Strict 5 MB size cap (prevents memory DoS)
- * - File magic-byte verification (%PDF- / PK\x03\x04) to prevent disguised uploads
- * - Minimum extracted text threshold (blocks empty/image-only files)
+ * - Strict 5 MB max & 100-byte min file bounds
+ * - Strict filename sanitization (blocks path traversal & double executable extensions)
+ * - Extension + MIME consistency checks
+ * - Magic-byte verification (%PDF- / PK\x03\x04)
+ * - Structural & active-script checks (blocks PDF /JavaScript /Launch & DOCX macros/XXE/invalid ZIPs)
+ * - Control-character & null-byte stripping on extracted text
  */
 
+const MIN_FILE_SIZE = 100;
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
+const ALLOWED_PDF_MIMES = new Set(['application/pdf', 'application/x-pdf', '']);
+const ALLOWED_DOCX_MIMES = new Set([
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/octet-stream',
+  '',
+]);
+
+const UNSAFE_EXECUTABLE_EXT_REGEX = /\.(exe|bat|cmd|sh|ps1|vbs|js|mjs|cjs|html|htm|svg|php|py|rb|dll|msi|scr)\./i;
 
 export interface ParsedResumeResult {
   ok: true;
@@ -26,7 +43,8 @@ export interface ParsedResumeError {
 }
 
 export function sanitizeUploadFilename(rawName: string, ext: '.pdf' | '.docx'): string {
-  const base = rawName.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 100);
+  const leaf = rawName.split(/[/\\]/).pop() ?? '';
+  const base = leaf.replace(/[^a-zA-Z0-9._-]/g, '_').replace(/\.{2,}/g, '.').slice(0, 100);
   if (!base) return `resume${ext}`;
   return base.toLowerCase().endsWith(ext) ? base : `${base}${ext}`;
 }
@@ -34,6 +52,18 @@ export function sanitizeUploadFilename(rawName: string, ext: '.pdf' | '.docx'): 
 export async function parseResumeFile(
   file: File
 ): Promise<ParsedResumeResult | ParsedResumeError> {
+  if (!file || typeof file.name !== 'string') {
+    return { ok: false, error: 'Invalid file upload.', status: 400 };
+  }
+
+  if (file.size < MIN_FILE_SIZE) {
+    return {
+      ok: false,
+      error: 'Uploaded file is empty or corrupted.',
+      status: 400,
+    };
+  }
+
   if (file.size > MAX_FILE_SIZE) {
     return {
       ok: false,
@@ -42,16 +72,51 @@ export async function parseResumeFile(
     };
   }
 
+  const rawName = file.name;
+  if (rawName.includes('..') || rawName.includes('\0') || UNSAFE_EXECUTABLE_EXT_REGEX.test(rawName)) {
+    return {
+      ok: false,
+      error: 'Unsafe or invalid filename.',
+      status: 400,
+      securityViolation: 'UNSAFE_UPLOAD_FILENAME',
+    };
+  }
+
+  const lowerName = rawName.toLowerCase();
+  const mime = (file.type || '').toLowerCase();
+  const isPdfByExt = lowerName.endsWith('.pdf');
+  const isDocxByExt = lowerName.endsWith('.docx');
+
+  if (!isPdfByExt && !isDocxByExt) {
+    return {
+      ok: false,
+      error: 'Unsupported file type. Please upload a valid .pdf or .docx file.',
+      status: 400,
+    };
+  }
+
+  if (isPdfByExt && !ALLOWED_PDF_MIMES.has(mime)) {
+    return {
+      ok: false,
+      error: 'File MIME type does not match .pdf extension.',
+      status: 400,
+      securityViolation: `MIME_EXTENSION_MISMATCH:${mime}`,
+    };
+  }
+
+  if (isDocxByExt && !ALLOWED_DOCX_MIMES.has(mime)) {
+    return {
+      ok: false,
+      error: 'File MIME type does not match .docx extension.',
+      status: 400,
+      securityViolation: `MIME_EXTENSION_MISMATCH:${mime}`,
+    };
+  }
+
   const buffer = Buffer.from(await file.arrayBuffer());
 
-  const lowerName = file.name.toLowerCase();
-  const isPdfByExt = lowerName.endsWith('.pdf') || file.type === 'application/pdf';
-  const isDocxByExt =
-    lowerName.endsWith('.docx') ||
-    file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-
   const hasPdfMagic =
-    buffer.length >= 5 && buffer.subarray(0, 5).toString('ascii') === '%PDF-';
+    buffer.length >= 8 && buffer.subarray(0, 5).toString('ascii') === '%PDF-';
   const hasDocxMagic =
     buffer.length >= 4 &&
     buffer[0] === 0x50 &&
@@ -72,6 +137,18 @@ export async function parseResumeFile(
         securityViolation: 'MAGIC_BYTE_MISMATCH_PDF',
       };
     }
+
+    // Reject active PDF exploit vectors (/JavaScript, /Launch actions, HTML script polyglots)
+    const headerSlice = buffer.subarray(0, Math.min(buffer.length, 256 * 1024)).toString('latin1');
+    if (/\/(?:JavaScript|JS|Launch)\b/.test(headerSlice) || /<script[\s>]/i.test(headerSlice)) {
+      return {
+        ok: false,
+        error: 'PDF contains active scripts or unsupported embedded actions.',
+        status: 400,
+        securityViolation: 'ACTIVE_SCRIPT_IN_PDF',
+      };
+    }
+
     const { extractText } = await import('unpdf');
     const { text: extractedText } = await extractText(new Uint8Array(buffer), {
       mergePages: true,
@@ -79,7 +156,7 @@ export async function parseResumeFile(
     text = extractedText;
     ext = '.pdf';
     contentType = 'application/pdf';
-  } else if (isDocxByExt) {
+  } else {
     if (!hasDocxMagic) {
       return {
         ok: false,
@@ -88,35 +165,60 @@ export async function parseResumeFile(
         securityViolation: 'MAGIC_BYTE_MISMATCH_DOCX',
       };
     }
+
+    // Verify OOXML ZIP directory structure & reject macro-laden or XXE-injected archives
+    const hasContentTypes = buffer.includes(Buffer.from('[Content_Types].xml'));
+    const hasWordDocument = buffer.includes(Buffer.from('word/document.xml'));
+    if (!hasContentTypes || !hasWordDocument) {
+      return {
+        ok: false,
+        error: 'Invalid DOCX archive structure.',
+        status: 400,
+        securityViolation: 'INVALID_DOCX_STRUCTURE',
+      };
+    }
+
+    if (buffer.includes(Buffer.from('vbaProject.bin')) || buffer.includes(Buffer.from('<!ENTITY'))) {
+      return {
+        ok: false,
+        error: 'DOCX file contains macros or disallowed XML entities.',
+        status: 400,
+        securityViolation: 'DOCX_MACRO_OR_XXE',
+      };
+    }
+
     const mammoth = await import('mammoth');
     const result = await mammoth.extractRawText({ buffer });
     text = result.value;
     ext = '.docx';
     contentType =
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-  } else {
-    return {
-      ok: false,
-      error: 'Unsupported file type. Please upload a valid PDF or .docx file.',
-      status: 400,
-    };
   }
 
-  if (!text || text.trim().length < 50) {
+  const sanitized = validateAndSanitizeText(text, {
+    minLength: 50,
+    maxLength: 50000,
+    allowNewlines: true,
+    label: 'Extracted resume text',
+  });
+
+  if (!sanitized.ok) {
     return {
       ok: false,
       error:
-        'Could not extract text from the file. Please ensure it is not image-only.',
+        text.trim().length < 50
+          ? 'Could not extract text from the file. Please ensure it is not image-only.'
+          : sanitized.error,
       status: 422,
     };
   }
 
   return {
     ok: true,
-    text: text.trim(),
+    text: sanitized.text,
     ext,
     contentType,
-    safeFilename: sanitizeUploadFilename(file.name, ext),
+    safeFilename: sanitizeUploadFilename(rawName, ext),
     buffer,
   };
 }

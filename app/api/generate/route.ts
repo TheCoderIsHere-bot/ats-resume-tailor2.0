@@ -9,6 +9,11 @@ import {
   getRateLimitKey,
 } from '@/lib/rateLimit';
 import { logAuthEvent, logRateLimitExceeded, logApiError } from '@/lib/securityLogger';
+import {
+  parseJsonObject,
+  hasOnlyAllowedKeys,
+  validateAndSanitizeText,
+} from '@/lib/validation';
 
 const ROUTE = '/api/generate';
 
@@ -86,22 +91,37 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-      // 4. Validate inputs (lower & upper bounds to prevent Gemini token-exhaustion DoS)
-      const body = await request.json();
-      const { resumeText, jobDescription } = body as { resumeText: string; jobDescription: string };
+      // 4. Strict JSON payload, field allowlist, control-char stripping & length validation
+      const parsedBody = await parseJsonObject(request);
+      if (!parsedBody.ok) {
+        return NextResponse.json({ error: parsedBody.error }, { status: 400 });
+      }
+      if (!hasOnlyAllowedKeys(parsedBody.data, ['resumeText', 'jobDescription'])) {
+        return NextResponse.json({ error: 'Unexpected fields in request body.' }, { status: 400 });
+      }
 
-      if (!jobDescription || typeof jobDescription !== 'string' || jobDescription.trim().length < 10) {
-        return NextResponse.json({ error: 'Job description is too short.' }, { status: 400 });
+      const jdValidation = validateAndSanitizeText(parsedBody.data.jobDescription, {
+        minLength: 10,
+        maxLength: 30000,
+        allowNewlines: true,
+        label: 'Job description',
+      });
+      if (!jdValidation.ok) {
+        return NextResponse.json({ error: jdValidation.error }, { status: 400 });
       }
-      if (jobDescription.length > 30000) {
-        return NextResponse.json({ error: 'Job description exceeds maximum allowed length (30,000 characters).' }, { status: 400 });
+
+      const resumeValidation = validateAndSanitizeText(parsedBody.data.resumeText, {
+        minLength: 50,
+        maxLength: 50000,
+        allowNewlines: true,
+        label: 'Resume text',
+      });
+      if (!resumeValidation.ok) {
+        return NextResponse.json({ error: resumeValidation.error }, { status: 400 });
       }
-      if (!resumeText || typeof resumeText !== 'string' || resumeText.trim().length < 50) {
-        return NextResponse.json({ error: 'Resume text is too short or empty.' }, { status: 400 });
-      }
-      if (resumeText.length > 50000) {
-        return NextResponse.json({ error: 'Resume text exceeds maximum allowed length (50,000 characters).' }, { status: 400 });
-      }
+
+      const resumeText = resumeValidation.text;
+      const jobDescription = jdValidation.text;
 
       // Use privileged server client for DB/RPC calls (direct public DB access is revoked)
       const serviceClient = await createServiceClient();

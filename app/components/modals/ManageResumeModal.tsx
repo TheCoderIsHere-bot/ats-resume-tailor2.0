@@ -22,6 +22,25 @@ export function ManageResumeModal() {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    const lowerName = file.name.toLowerCase();
+    const isValidExt = lowerName.endsWith('.pdf') || lowerName.endsWith('.docx');
+    const allowedMimes = [
+      'application/pdf',
+      'application/x-pdf',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      '',
+    ];
+    if (!isValidExt || !allowedMimes.includes(file.type.toLowerCase())) {
+      setError('Please upload a valid .pdf or Word (.docx) file.');
+      e.target.value = '';
+      return;
+    }
+    if (file.size < 100 || file.size > 5 * 1024 * 1024) {
+      setError(file.size < 100 ? 'Uploaded file is empty or corrupted.' : 'File is too large. Maximum size is 5MB.');
+      e.target.value = '';
+      return;
+    }
+
     setMasterResumeLoading(true);
     try {
       const formData = new FormData();

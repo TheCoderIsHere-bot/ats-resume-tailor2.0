@@ -8,6 +8,11 @@ import {
   getRateLimitKey,
 } from '@/lib/rateLimit';
 import { logAuthEvent, logRateLimitExceeded, logApiError } from '@/lib/securityLogger';
+import {
+  parseJsonObject,
+  hasOnlyAllowedKeys,
+  validateAndSanitizeText,
+} from '@/lib/validation';
 
 const ROUTE = '/api/score';
 
@@ -73,25 +78,30 @@ export async function POST(request: NextRequest) {
     }
 
     try {
-      const { resumeText, jobDescription } = await request.json() as {
-        resumeText: string;
-        jobDescription: string;
-      };
-
-      if (
-        !resumeText ||
-        typeof resumeText !== 'string' ||
-        !jobDescription ||
-        typeof jobDescription !== 'string' ||
-        jobDescription.trim().length < 10 ||
-        jobDescription.length > 30000 ||
-        resumeText.length > 50000
-      ) {
-        return NextResponse.json({ score: null });
+      const parsedBody = await parseJsonObject(request);
+      if (!parsedBody.ok || !hasOnlyAllowedKeys(parsedBody.data, ['resumeText', 'jobDescription'])) {
+        return NextResponse.json({ error: 'Invalid request payload.' }, { status: 400 });
       }
 
-      const jdKeywords = await extractJDKeywords(jobDescription);
-      const result = scoreResume(resumeText, jdKeywords);
+      const resumeValidation = validateAndSanitizeText(parsedBody.data.resumeText, {
+        minLength: 50,
+        maxLength: 50000,
+        allowNewlines: true,
+        label: 'Resume text',
+      });
+      const jdValidation = validateAndSanitizeText(parsedBody.data.jobDescription, {
+        minLength: 10,
+        maxLength: 30000,
+        allowNewlines: true,
+        label: 'Job description',
+      });
+
+      if (!resumeValidation.ok || !jdValidation.ok) {
+        return NextResponse.json({ score: null }, { headers: buildRateLimitHeaders(rl) });
+      }
+
+      const jdKeywords = await extractJDKeywords(jdValidation.text);
+      const result = scoreResume(resumeValidation.text, jdKeywords);
 
       if (result.insufficientData) {
         return NextResponse.json({ score: null }, { headers: buildRateLimitHeaders(rl) });

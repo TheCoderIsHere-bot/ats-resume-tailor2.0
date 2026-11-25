@@ -1,14 +1,15 @@
-import DOMPurify from 'isomorphic-dompurify';
+import { escapeHtmlChars, sanitizeResumeHtml } from '@/lib/htmlSanitizer';
 
 export function markdownToHtml(markdown: string, matchedKeywords: string[] = []): string {
   if (!markdown) return '';
 
-  let processed = markdown;
+  // 1. Escape raw HTML metacharacters upfront to prevent XSS & preserve literal "<", ">" in text
+  let processed = escapeHtmlChars(markdown);
 
-  // 1. If matchedKeywords are provided, highlight un-bolded occurrences in non-header lines
+  // 2. Highlight matched keywords safely outside existing **bold** markers
   if (matchedKeywords && matchedKeywords.length > 0) {
     const validKw = matchedKeywords
-      .map((k) => k.trim())
+      .map((k) => escapeHtmlChars(k.trim()))
       .filter((k) => k.length >= 3 && !/^(and|the|for|with|from|that|this)$/i.test(k))
       .sort((a, b) => b.length - a.length);
 
@@ -17,12 +18,11 @@ export function markdownToHtml(markdown: string, matchedKeywords: string[] = [])
       processed = lines
         .map((line) => {
           if (line.startsWith('#')) return line;
-          // Split by ** so we only match parts outside existing bold tags
           const parts = line.split('**');
           for (let i = 0; i < parts.length; i += 2) {
             for (const kw of validKw) {
-              const escaped = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-              const regex = new RegExp(`\\b(${escaped})\\b`, 'gi');
+              const escapedRegex = kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+              const regex = new RegExp(`\\b(${escapedRegex})\\b`, 'gi');
               parts[i] = parts[i].replace(regex, '@@HIGHLIGHT@@$1@@ENDHIGHLIGHT@@');
             }
           }
@@ -33,7 +33,7 @@ export function markdownToHtml(markdown: string, matchedKeywords: string[] = [])
     }
   }
 
-  // 2. Clean headings so heading text itself is not highlighted
+  // 3. Render structural markdown tags
   const raw = processed
     .replace(/^### (.+)$/gm, (_, m) => `<h3 class="text-base font-bold text-[#222222] mt-6 mb-2">${m.replace(/\*\*(.+?)\*\*/g, '$1')}</h3>`)
     .replace(/^## (.+)$/gm, (_, m) => `<h2 class="text-xs font-bold tracking-widest text-gray-400 uppercase mt-8 mb-3">${m.replace(/\*\*(.+?)\*\*/g, '$1')}</h2>`)
@@ -46,5 +46,5 @@ export function markdownToHtml(markdown: string, matchedKeywords: string[] = [])
     .replace(/^(?!<[hul]|<hr|<li)(.+)$/gm, '<p class="text-[15px] text-[#444444] leading-relaxed mb-3">$1</p>')
     .replace(/\n\n/g, '');
 
-  return DOMPurify.sanitize(raw, { ADD_ATTR: ['class', 'title'] });
+  return sanitizeResumeHtml(raw);
 }

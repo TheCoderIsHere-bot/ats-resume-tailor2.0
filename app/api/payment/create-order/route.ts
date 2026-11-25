@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import { rateLimitMulti, buildRateLimitHeaders, getRateLimitKey } from '@/lib/rateLimit';
 import { getOptionalServerEnv } from '@/lib/env';
 import { logAuthEvent, logRateLimitExceeded, logApiError } from '@/lib/securityLogger';
+import { parseJsonObject, hasOnlyAllowedKeys } from '@/lib/validation';
 import Razorpay from 'razorpay';
 
 const ROUTE = '/api/payment/create-order';
@@ -70,8 +71,16 @@ export async function POST(request: NextRequest) {
       key_secret: keySecret,
     });
 
-    const body = await request.json();
-    const tokens: number = body.tokens ?? TOKENS_PER_BUNDLE;
+    const parsedBody = await parseJsonObject(request);
+    if (!parsedBody.ok) {
+      return NextResponse.json({ error: parsedBody.error }, { status: 400 });
+    }
+    if (!hasOnlyAllowedKeys(parsedBody.data, ['tokens'])) {
+      return NextResponse.json({ error: 'Unexpected fields in request body.' }, { status: 400 });
+    }
+
+    const tokensRaw = parsedBody.data.tokens ?? TOKENS_PER_BUNDLE;
+    const tokens = tokensRaw as number;
 
     // Strict validation: positive integer, bounded between 10 and 100, multiple of bundle
     if (
