@@ -259,8 +259,8 @@ export function ReviewView() {
                 {isEditing ? (
                   <span className="ml-2 text-xs text-[#8AA694] font-medium">● Editing mode — click any text to change it</span>
                 ) : activeTab === 'resume' && hasResumeHighlights ? (
-                  <span className="ml-auto text-xs text-[#556B5D] bg-[#8AA694]/10 px-2.5 py-1 rounded-full font-medium inline-flex items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#8AA694]/70"></span>
+                  <span className="ml-auto text-xs text-[#2B4C3B] bg-[#D9ECE1] px-2.5 py-1 rounded-full font-medium inline-flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#5F846E]"></span>
                     Subtle highlights show tailored changes
                   </span>
                 ) : null}

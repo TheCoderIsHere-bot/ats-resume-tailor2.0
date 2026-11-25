@@ -437,7 +437,7 @@ async function runSuite() {
     const html = markdown.markdownToHtml(annotated);
     assert.equal(html.includes('<strong class="font-semibold text-[#222222]">University of Mumbai</strong>'), true);
     assert.equal(html.includes('<strong class="font-semibold text-[#222222]">Google Cloud Professional Data Engineer</strong>'), true);
-    assert.equal(html.includes('<mark class="font-medium text-[#1F3629] bg-[#8AA694]/10 rounded-[3px] px-[2px]"'), true);
+    assert.equal(html.includes('<mark class="font-medium text-[#163826] bg-[#D9ECE1] rounded-[3px] px-[2px] py-[1px]"'), true);
     assert.equal(html.includes('bg-[#EAF5EF]'), false);
   });
 
