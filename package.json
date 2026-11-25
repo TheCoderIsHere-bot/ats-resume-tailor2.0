@@ -7,7 +7,11 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "security:scan": "node scripts/scan-secrets.mjs"
+    "security:scan": "node scripts/scan-secrets.mjs",
+    "security:sast": "node scripts/sast-scan.mjs",
+    "security:deps": "node scripts/dep-check.mjs",
+    "security:test": "node scripts/security-verify.mjs",
+    "security:all": "npm run security:scan && npm run security:sast && npm run security:test && npm run security:deps"
   },
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
@@ -19,7 +23,7 @@
     "jspdf": "^4.2.0",
     "lucide-react": "^0.577.0",
     "mammoth": "^1.11.0",
-    "next": "16.1.6",
+    "next": "^16.4.6",
     "razorpay": "^2.9.6",
     "react": "19.2.3",
     "react-dom": "19.2.3",
@@ -31,7 +35,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
-    "eslint-config-next": "16.1.6",
+    "eslint-config-next": "^16.4.6",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

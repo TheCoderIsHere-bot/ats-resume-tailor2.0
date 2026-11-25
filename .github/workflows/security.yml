@@ -1,0 +1,80 @@
+name: Automated Security Scanning & Dependency Audit
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    # Weekly Monday 03:00 UTC security sweep
+    - cron: '0 3 * * 1'
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  appsec-checks:
+    name: Secrets, SAST, Security Tests & Audit
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies cleanly
+        run: npm ci
+
+      - name: Secret & Client-Boundary Scan
+        run: npm run security:scan
+
+      - name: Custom Next.js SAST & Route Guardrail Scan
+        run: npm run security:sast
+
+      - name: Security & Pentest Regression Verification Suite
+        run: npm run security:test
+
+      - name: Strict Dependency Lockfile & Vulnerability Audit
+        run: node scripts/dep-check.mjs --strict
+
+      - name: Lint & TypeScript Verification
+        run: |
+          npm run lint
+          npx tsc --noEmit
+
+  codeql-sast:
+    name: CodeQL SAST Analysis
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+          queries: security-extended,security-and-quality
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:javascript-typescript"
+
+  semgrep-sast:
+    name: Semgrep OWASP & Next.js SAST
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Semgrep SAST Rulesets
+        run: semgrep scan --config p/nextjs --config p/typescript --config p/owasp-top-ten --config p/secrets --error
