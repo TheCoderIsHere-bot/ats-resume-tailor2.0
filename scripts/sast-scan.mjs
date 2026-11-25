@@ -143,6 +143,7 @@ for (const reqHeader of requiredHeaders) {
 }
 
 // 4. Verify GitHub Actions workflows pin third-party actions to 40-char commit SHAs
+// and Dependabot specifies a package cooldown period
 const workflowsDir = path.join(ROOT, '.github', 'workflows');
 const workflowFiles = [];
 if (fs.existsSync(workflowsDir)) {
@@ -160,6 +161,16 @@ if (fs.existsSync(workflowsDir)) {
       }
     });
     workflowFiles.push(wfPath);
+  }
+}
+
+const dependabotPath = path.join(ROOT, '.github', 'dependabot.yml');
+if (fs.existsSync(dependabotPath)) {
+  const dbContent = fs.readFileSync(dependabotPath, 'utf8');
+  const ecosystems = (dbContent.match(/package-ecosystem:/g) || []).length;
+  const cooldowns = (dbContent.match(/cooldown:\s*\r?\n\s+default-days:\s*\d+/g) || []).length;
+  if (cooldowns < ecosystems) {
+    fail('.github/dependabot.yml is missing cooldown.default-days on one or more package-ecosystem entries');
   }
 }
 
