@@ -1,7 +1,9 @@
 import { createServerClient } from '@supabase/ssr';
 import { createClient as createSupabaseAdminClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
-import { getSupabaseConfig, getSupabaseServiceRoleKey } from '@/lib/env';
+import { assertServerOnly, getSupabaseConfig, getSupabaseServiceRoleKey } from '@/lib/env';
+
+assertServerOnly('lib/supabase/server');
 
 /**
  * Authenticated user server client bound to verified HTTP cookies.

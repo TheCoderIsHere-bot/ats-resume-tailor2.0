@@ -1,5 +1,7 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { requireServerEnv } from '@/lib/env';
+import { assertServerOnly, requireServerEnv } from '@/lib/env';
+
+assertServerOnly('lib/gemini');
 
 // Lazy singleton — instantiated at request time, not at module evaluation / build time
 let _genAI: GoogleGenerativeAI | null = null;

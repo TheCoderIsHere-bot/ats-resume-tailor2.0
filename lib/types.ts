@@ -1,4 +1,13 @@
-import type { ATSScoreBreakdown } from './ats-score';
+export interface ATSScoreBreakdown {
+  requiredMatched: string[];
+  requiredMissed: string[];
+  preferredMatched: string[];
+  preferredMissed: string[];
+  requiredScore: number;   // 0–70 points
+  preferredScore: number;  // 0–20 points
+  bonusScore: number;      // 0–10 points
+  total: number;           // 0–100
+}
 
 export interface Generation {
   id: string;

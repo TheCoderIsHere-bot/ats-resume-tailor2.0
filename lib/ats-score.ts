@@ -13,7 +13,12 @@
  */
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { requireServerEnv } from '@/lib/env';
+import { assertServerOnly, requireServerEnv } from '@/lib/env';
+import type { ATSScoreBreakdown } from '@/lib/types';
+
+assertServerOnly('lib/ats-score');
+
+export type { ATSScoreBreakdown };
 
 // Lazy singleton — instantiated at request time, not at module evaluation / build time
 let _genAI: GoogleGenerativeAI | null = null;
@@ -30,17 +35,6 @@ export interface JDKeywords {
   jobTitle: string;
   requiredYears: number;    // 0 if not specified
   educationLevel: string;   // e.g. "Bachelor's", "Master's", "" if not specified
-}
-
-export interface ATSScoreBreakdown {
-  requiredMatched: string[];
-  requiredMissed: string[];
-  preferredMatched: string[];
-  preferredMissed: string[];
-  requiredScore: number;   // 0–70 points
-  preferredScore: number;  // 0–20 points
-  bonusScore: number;      // 0–10 points
-  total: number;           // 0–100
 }
 
 export interface ATSScoreResult {

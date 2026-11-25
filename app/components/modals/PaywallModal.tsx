@@ -35,7 +35,7 @@ export function PaywallModal() {
       }
 
       const options = {
-        key: process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID,
+        key: order.keyId,
         amount: order.amount,
         currency: order.currency,
         name: 'Tailor.ai',

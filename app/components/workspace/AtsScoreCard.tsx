@@ -3,7 +3,7 @@
 import { theme } from '@/lib/theme';
 import { CheckCircle2, XCircle, ChevronDown, ChevronUp, TrendingUp } from 'lucide-react';
 import { useState } from 'react';
-import type { ATSScoreBreakdown } from '@/lib/ats-score';
+import type { ATSScoreBreakdown } from '@/lib/types';
 
 interface AtsScoreCardProps {
   atsScore: number | null;        // null = JD insufficient for scoring

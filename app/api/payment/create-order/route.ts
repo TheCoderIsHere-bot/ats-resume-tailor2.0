@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const keyId = getOptionalServerEnv('RAZORPAY_KEY_ID');
+    const keyId = getOptionalServerEnv('RAZORPAY_KEY_ID') ?? getOptionalServerEnv('NEXT_PUBLIC_RAZORPAY_KEY_ID');
     const keySecret = getOptionalServerEnv('RAZORPAY_KEY_SECRET');
     if (!keyId || !keySecret) {
       logApiError(request, ROUTE, new Error('Payment gateway credentials unconfigured'), {
@@ -99,6 +99,7 @@ export async function POST(request: NextRequest) {
       id: order.id,
       amount: order.amount,
       currency: order.currency,
+      keyId,
     });
   } catch (error) {
     logApiError(request, ROUTE, error, { userId, statusCode: 500 });

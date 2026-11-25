@@ -1,8 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useMemo } from 'react';
-import type { Generation, ActiveTab, CraftInputs } from '@/lib/types';
-import type { ATSScoreBreakdown } from '@/lib/ats-score';
+import type { Generation, ActiveTab, CraftInputs, ATSScoreBreakdown } from '@/lib/types';
 import { useAuth } from './AuthContext';
 
 export interface WorkspaceContextValue {

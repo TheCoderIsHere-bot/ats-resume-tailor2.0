@@ -21,12 +21,19 @@ function isPlaceholderValue(val: string): boolean {
 }
 
 /**
+ * Assert code is running on the server before loading server-only modules or secrets.
+ */
+export function assertServerOnly(scope: string): void {
+  if (typeof window !== 'undefined') {
+    throw new Error(`Security Violation: Server-only module/secret "${scope}" accessed in browser context.`);
+  }
+}
+
+/**
  * Assert code is running on the server before accessing server-only secrets.
  */
 function assertServerContext(varName: string) {
-  if (typeof window !== 'undefined') {
-    throw new Error(`Security Violation: Attempted to read server secret "${varName}" in browser context.`);
-  }
+  assertServerOnly(varName);
 }
 
 /**
