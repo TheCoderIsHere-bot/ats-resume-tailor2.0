@@ -6,7 +6,14 @@ import { useApp } from '@/app/context/AppContext';
 import { theme } from '@/lib/theme';
 
 export function ManageResumeModal() {
-  const { showManageResumeModal, setShowManageResumeModal, savedMasterResume, supabase, setSavedMasterResume, setSavedMasterResumeText, setError } = useApp();
+  const {
+    showManageResumeModal,
+    setShowManageResumeModal,
+    savedMasterResume,
+    setSavedMasterResume,
+    setSavedMasterResumeText,
+    setError,
+  } = useApp();
   const [masterResumeLoading, setMasterResumeLoading] = useState(false);
 
   if (!showManageResumeModal) return null;
@@ -15,39 +22,38 @@ export function ManageResumeModal() {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Strict IDOR prevention: revalidate authenticated user session
-    const { data: { user: currentUser } } = await supabase.auth.getUser();
-    if (!currentUser) return;
-
     setMasterResumeLoading(true);
     try {
       const formData = new FormData();
       formData.append('file', file);
-      const parseRes = await fetch('/api/parse-resume', { method: 'POST', body: formData });
-      if (!parseRes.ok) throw new Error('Failed to parse resume.');
-      const { text } = await parseRes.json();
-      const ext = file.name.substring(file.name.lastIndexOf('.'));
-      const storagePath = `${currentUser.id}/master_resume${ext}`;
-      await supabase.storage.from('resumes').upload(storagePath, file, { upsert: true });
-      await supabase.from('users').update({ master_resume_filename: file.name, master_resume_text: text, master_resume_path: storagePath }).eq('id', currentUser.id);
-      setSavedMasterResume(file.name);
-      setSavedMasterResumeText(text);
+      const res = await fetch('/api/user/master-resume', { method: 'POST', body: formData });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to save master resume.');
+
+      setSavedMasterResume(data.filename);
+      setSavedMasterResumeText(data.text);
       setShowManageResumeModal(false);
-    } catch { setError('Failed to save master resume. Please try again.'); } finally { setMasterResumeLoading(false); }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save master resume. Please try again.');
+    } finally {
+      setMasterResumeLoading(false);
+    }
   }
 
   async function handleRemove() {
-    // Strict IDOR prevention: revalidate authenticated user session
-    const { data: { user: currentUser } } = await supabase.auth.getUser();
-    if (!currentUser) return;
+    setMasterResumeLoading(true);
+    try {
+      const res = await fetch('/api/user/master-resume', { method: 'DELETE' });
+      if (!res.ok) throw new Error('Failed to remove saved resume.');
 
-    const { data: ud } = await supabase.from('users').select('master_resume_path').eq('id', currentUser.id).single();
-    // Only allow removal if storage path strictly resides in current user's namespace
-    if (ud?.master_resume_path && ud.master_resume_path.startsWith(`${currentUser.id}/`)) {
-      await supabase.storage.from('resumes').remove([ud.master_resume_path]);
+      setSavedMasterResume(null);
+      setSavedMasterResumeText(null);
+      setShowManageResumeModal(false);
+    } catch {
+      setError('Failed to remove saved resume. Please try again.');
+    } finally {
+      setMasterResumeLoading(false);
     }
-    await supabase.from('users').update({ master_resume_filename: null, master_resume_text: null, master_resume_path: null }).eq('id', currentUser.id);
-    setSavedMasterResume(null); setSavedMasterResumeText(null); setShowManageResumeModal(false);
   }
 
   return (
@@ -66,7 +72,13 @@ export function ManageResumeModal() {
           <input type="file" accept=".pdf,.docx" className="hidden" onChange={handleUpload} />
         </label>
         {savedMasterResume && (
-          <button onClick={handleRemove} className="mt-4 w-full text-center text-sm text-gray-500 hover:text-red-500 transition-colors">Remove saved resume</button>
+          <button
+            onClick={handleRemove}
+            disabled={masterResumeLoading}
+            className="mt-4 w-full text-center text-sm text-gray-500 hover:text-red-500 transition-colors disabled:opacity-50"
+          >
+            Remove saved resume
+          </button>
         )}
       </div>
     </div>

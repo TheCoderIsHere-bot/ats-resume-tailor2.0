@@ -1,29 +1,50 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { rateLimit } from '@/lib/rateLimit';
+import { getOptionalServerEnv } from '@/lib/env';
+import { logAuthEvent, logRateLimitExceeded, logApiError } from '@/lib/securityLogger';
 import Razorpay from 'razorpay';
 
+const ROUTE = '/api/payment/create-order';
 const TOKENS_PER_BUNDLE = 10;
 const PRICE_INR = 25000; // ₹250 in paise
 
 export async function POST(request: NextRequest) {
+  let userId: string | undefined;
   try {
     const supabase = await createClient();
 
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) {
+      logAuthEvent(request, 'AUTH_FAILURE', {
+        route: ROUTE,
+        reason: authError?.message ?? 'missing_session',
+        statusCode: 401,
+      });
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    userId = user.id;
 
     // Rate limit order creation (max 10 orders per 10 minutes per user)
     const rl = rateLimit(`order:${user.id}`, { limit: 10, windowMs: 10 * 60 * 1000 });
     if (!rl.allowed) {
+      logRateLimitExceeded(request, ROUTE, {
+        userId: user.id,
+        limitKey: 'create-order',
+        limit: 10,
+        resetInMs: rl.resetInMs,
+      });
       return NextResponse.json({ error: 'Too many requests. Please wait a moment.' }, { status: 429 });
     }
 
-    const keyId = process.env.RAZORPAY_KEY_ID;
-    const keySecret = process.env.RAZORPAY_KEY_SECRET;
-    if (!keyId || !keySecret || keyId.startsWith('your_')) {
+    const keyId = getOptionalServerEnv('RAZORPAY_KEY_ID');
+    const keySecret = getOptionalServerEnv('RAZORPAY_KEY_SECRET');
+    if (!keyId || !keySecret) {
+      logApiError(request, ROUTE, new Error('Payment gateway credentials unconfigured'), {
+        userId: user.id,
+        statusCode: 503,
+      });
       return NextResponse.json({ error: 'Payment gateway is currently unconfigured.' }, { status: 503 });
     }
 
@@ -64,7 +85,7 @@ export async function POST(request: NextRequest) {
       currency: order.currency,
     });
   } catch (error) {
-    console.error('create-order error:', error);
+    logApiError(request, ROUTE, error, { userId, statusCode: 500 });
     return NextResponse.json({ error: 'Could not create payment order.' }, { status: 500 });
   }
 }

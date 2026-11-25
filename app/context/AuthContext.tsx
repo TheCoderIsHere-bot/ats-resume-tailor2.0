@@ -43,36 +43,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
 
   const fetchUserData = useCallback(async (_userId?: string) => {
-    void _userId; // IDOR prevention: ignore any caller-supplied ID and bind strictly to the verified session
-    const { data: { user: currentUser } } = await supabase.auth.getUser();
-    if (!currentUser) return;
-    const targetUserId = currentUser.id;
-
-    const [{ data: userData }, { data: genData }] = await Promise.all([
-      supabase.from('users').select('tokens_balance, master_resume_filename, master_resume_text').eq('id', targetUserId).single(),
-      supabase.from('generations').select('*').eq('user_id', targetUserId).order('created_at', { ascending: false }).limit(20),
-    ]);
-    if (userData) {
-      setTokens(userData.tokens_balance ?? 0);
-      setSavedMasterResume(userData.master_resume_filename ?? null);
-      setSavedMasterResumeText(userData.master_resume_text ?? null);
+    void _userId; // Always resolved server-side from verified HTTP cookie session
+    try {
+      const res = await fetch('/api/user/data', { method: 'GET', cache: 'no-store' });
+      if (!res.ok) return;
+      const { userData, generations: genData } = await res.json();
+      if (userData) {
+        setTokens(userData.tokens_balance ?? 0);
+        setSavedMasterResume(userData.master_resume_filename ?? null);
+        setSavedMasterResumeText(userData.master_resume_text ?? null);
+      }
+      if (genData) setGenerations(genData as Generation[]);
+    } catch {
+      // Fail gracefully on transient network issues
     }
-    if (genData) setGenerations(genData as Generation[]);
   }, []);
 
   const fetchTransactions = useCallback(async () => {
-    const { data: { user: currentUser } } = await supabase.auth.getUser();
-    if (!currentUser) return;
-    // Strict IDOR prevention: always bind queries to the authenticated session user ID
-    const { data } = await supabase
-      .from('transactions')
-      .select('id, amount_inr, tokens_added, created_at')
-      .eq('user_id', currentUser.id)
-      .eq('status', 'Success')
-      .order('created_at', { ascending: false })
-      .limit(10);
-    if (data) setTransactions(data);
-  }, []);
+    if (!user) return;
+    try {
+      const res = await fetch('/api/user/transactions', { method: 'GET', cache: 'no-store' });
+      if (!res.ok) return;
+      const { transactions: txData } = await res.json();
+      if (txData) setTransactions(txData);
+    } catch {
+      // Fail gracefully on transient network issues
+    }
+  }, [user]);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }: { data: { user: SupabaseUser | null } }) => {
@@ -90,6 +87,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSavedMasterResume(null);
         setSavedMasterResumeText(null);
         setGenerations([]);
+        setTransactions([]);
       }
     });
 

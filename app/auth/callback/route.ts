@@ -1,23 +1,40 @@
-import { createServerClient } from '@supabase/ssr';
-import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
+import { createClient } from '@/lib/supabase/server';
 import { rateLimit, getRateLimitKey } from '@/lib/rateLimit';
+import { getAppOrigin } from '@/lib/env';
+import { logAuthEvent, logRateLimitExceeded, logApiError } from '@/lib/securityLogger';
+
+const ROUTE = '/auth/callback';
 
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url);
-  const origin = requestUrl.origin;
+  const origin = getAppOrigin(request);
 
   // 1. Rate limit callback exchanges (max 20 per IP per 10 minutes) to prevent code brute-forcing
   const rl = rateLimit(getRateLimitKey(request, ':auth-callback'), { limit: 20, windowMs: 10 * 60 * 1000 });
   if (!rl.allowed) {
+    logRateLimitExceeded(request, ROUTE, {
+      limitKey: 'auth-callback',
+      limit: 20,
+      resetInMs: rl.resetInMs,
+    });
+    logAuthEvent(request, 'AUTH_FAILURE', {
+      route: ROUTE,
+      reason: 'callback_rate_limited',
+      statusCode: 429,
+    });
     return NextResponse.redirect(`${origin}/?error=rate_limited`);
   }
 
   // 2. Check for upstream OAuth provider errors (e.g., user denied permission, invalid grant)
   const oauthError = requestUrl.searchParams.get('error');
   if (oauthError) {
-    console.warn('OAuth provider returned error:', oauthError, requestUrl.searchParams.get('error_description'));
+    logAuthEvent(request, 'AUTH_FAILURE', {
+      route: ROUTE,
+      reason: `oauth_provider_error:${oauthError}`,
+      statusCode: 400,
+    });
     return NextResponse.redirect(`${origin}/?error=${encodeURIComponent(oauthError)}`);
   }
 
@@ -31,37 +48,46 @@ export async function GET(request: NextRequest) {
       : '/';
 
   if (code && typeof code === 'string' && code.length >= 6 && code.length <= 512) {
-    try {
-      const cookieStore = await cookies();
-      const supabase = createServerClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-        {
-          cookies: {
-            getAll() { return cookieStore.getAll(); },
-            setAll(cookiesToSet) {
-              cookiesToSet.forEach(({ name, value, options }) =>
-                cookieStore.set(name, value, {
-                  ...options,
-                  sameSite: 'lax',
-                  secure: process.env.NODE_ENV === 'production',
-                  path: '/',
-                })
-              );
-            },
-          },
-        }
-      );
+    logAuthEvent(request, 'AUTH_ATTEMPT', {
+      route: ROUTE,
+      reason: 'code_exchange',
+    });
 
-      const { error } = await supabase.auth.exchangeCodeForSession(code);
+    try {
+      const supabase = await createClient();
+      const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+
       if (error) {
-        console.warn('Auth exchangeCodeForSession error:', error.message);
+        logAuthEvent(request, 'AUTH_FAILURE', {
+          route: ROUTE,
+          reason: `exchange_failed:${error.message}`,
+          statusCode: 401,
+        });
         return NextResponse.redirect(`${origin}/?error=auth_failed`);
       }
+
+      logAuthEvent(request, 'AUTH_SUCCESS', {
+        route: ROUTE,
+        userId: data.user?.id,
+        provider: (data.user?.app_metadata?.provider as string) ?? 'unknown',
+        statusCode: 200,
+      });
     } catch (err) {
-      console.error('Callback error:', err);
+      logApiError(request, ROUTE, err, { statusCode: 500 });
+      logAuthEvent(request, 'AUTH_FAILURE', {
+        route: ROUTE,
+        reason: 'callback_exception',
+        statusCode: 500,
+      });
       return NextResponse.redirect(`${origin}/?error=server_error`);
     }
+  } else if (code) {
+    logAuthEvent(request, 'AUTH_FAILURE', {
+      route: ROUTE,
+      reason: 'malformed_auth_code',
+      statusCode: 400,
+    });
+    return NextResponse.redirect(`${origin}/?error=invalid_code`);
   }
 
   return NextResponse.redirect(new URL(safeNext, origin));

@@ -1,22 +1,46 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { createServiceClient } from '@/lib/supabase/server';
+import { getOptionalServerEnv } from '@/lib/env';
+import {
+  getClientIp,
+  getRequestId,
+  logApiError,
+  logSecurityEvent,
+} from '@/lib/securityLogger';
+import { recordSuspiciousSignal } from '@/lib/trafficMonitor';
 
+const ROUTE = '/api/webhooks/razorpay';
 const TOKENS_PER_BUNDLE = 10;
 const PRICE_INR = 250;
 
 export async function POST(request: NextRequest) {
+  const ip = getClientIp(request.headers);
+  const userAgent = request.headers.get('user-agent');
+  const requestId = getRequestId(request.headers);
+
   try {
     const rawBody = await request.text();
     const signature = request.headers.get('x-razorpay-signature');
 
     if (!signature) {
+      logSecurityEvent({
+        eventType: 'SECURITY_VIOLATION',
+        severity: 'warn',
+        route: ROUTE,
+        method: request.method,
+        ip,
+        userAgent,
+        requestId,
+        statusCode: 400,
+        details: { violation: 'MISSING_WEBHOOK_SIGNATURE' },
+      });
       return NextResponse.json({ error: 'Missing signature' }, { status: 400 });
     }
 
-    const webhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET;
-    if (!webhookSecret || webhookSecret.startsWith('your_')) {
-      console.error('RAZORPAY_WEBHOOK_SECRET is unconfigured');
+    const webhookSecret = getOptionalServerEnv('RAZORPAY_WEBHOOK_SECRET');
+    if (!webhookSecret) {
+      logApiError(request, ROUTE, new Error('RAZORPAY_WEBHOOK_SECRET is unconfigured'), { statusCode: 500 });
       return NextResponse.json({ error: 'Webhook secret unconfigured' }, { status: 500 });
     }
 
@@ -33,6 +57,21 @@ export async function POST(request: NextRequest) {
       expectedBuf.length !== signatureBuf.length ||
       !crypto.timingSafeEqual(expectedBuf, signatureBuf)
     ) {
+      const signal = recordSuspiciousSignal(ip, 'BAD_SIGNATURE');
+      logSecurityEvent({
+        eventType: signal.escalated ? 'TRAFFIC_ANOMALY' : 'SECURITY_VIOLATION',
+        severity: signal.escalated ? 'critical' : 'warn',
+        route: ROUTE,
+        method: request.method,
+        ip,
+        userAgent,
+        requestId,
+        statusCode: 401,
+        details: {
+          violation: 'INVALID_WEBHOOK_SIGNATURE',
+          badSignatureAttempts10m: signal.count,
+        },
+      });
       return NextResponse.json({ error: 'Invalid signature' }, { status: 401 });
     }
 
@@ -48,6 +87,7 @@ export async function POST(request: NextRequest) {
       const amountPaise = payment?.amount as number;
 
       if (!userId || !orderId || !paymentId) {
+        logApiError(request, ROUTE, new Error('Missing payment metadata'), { statusCode: 400 });
         return NextResponse.json({ error: 'Missing payment metadata' }, { status: 400 });
       }
 
@@ -65,7 +105,7 @@ export async function POST(request: NextRequest) {
       }
 
       // Insert transaction record
-      await supabase.from('transactions').insert({
+      const { error: txError } = await supabase.from('transactions').insert({
         user_id: userId,
         razorpay_payment_id: paymentId,
         amount_inr: Math.round(amountPaise / 100) || PRICE_INR,
@@ -73,18 +113,22 @@ export async function POST(request: NextRequest) {
         status: 'Success',
       });
 
+      if (txError) {
+        logApiError(request, ROUTE, txError, { userId, statusCode: 500, context: 'transaction_insert' });
+      }
+
       // Atomically add tokens (prevents race conditions with concurrent webhooks)
       const { error: rpcError } = await supabase
         .rpc('add_tokens', { p_user_id: userId, p_amount: tokensToAdd });
 
       if (rpcError) {
-        console.error('Token credit error:', rpcError);
+        logApiError(request, ROUTE, rpcError, { userId, statusCode: 500, context: 'add_tokens_rpc' });
       }
     }
 
     return NextResponse.json({ received: true });
   } catch (error) {
-    console.error('webhook error:', error);
+    logApiError(request, ROUTE, error, { statusCode: 500 });
     return NextResponse.json({ error: 'Webhook processing failed' }, { status: 500 });
   }
 }

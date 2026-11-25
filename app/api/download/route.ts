@@ -1,8 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/server';
+import { createClient, createServiceClient } from '@/lib/supabase/server';
 import { generatePdf } from '@/lib/pdf';
 import { generateDocx } from '@/lib/docx';
 import { rateLimit } from '@/lib/rateLimit';
+import {
+  getClientIp,
+  getRequestId,
+  logAuthEvent,
+  logRateLimitExceeded,
+  logApiError,
+  logSecurityEvent,
+} from '@/lib/securityLogger';
+import { recordSuspiciousSignal } from '@/lib/trafficMonitor';
+
+const ROUTE = '/api/download';
 
 /**
  * Convert edited HTML back to markdown for PDF/DOCX generation.
@@ -50,17 +61,31 @@ function htmlToMarkdown(html: string): string {
 }
 
 export async function POST(request: NextRequest) {
+  let userId: string | undefined;
   try {
     const supabase = await createClient();
 
     const { data: { user }, error: authError } = await supabase.auth.getUser();
     if (authError || !user) {
+      logAuthEvent(request, 'AUTH_FAILURE', {
+        route: ROUTE,
+        reason: authError?.message ?? 'missing_session',
+        statusCode: 401,
+      });
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    userId = user.id;
 
     // Rate limit downloads: 30 downloads per user per 10 minutes
     const rl = rateLimit(`download:${user.id}`, { limit: 30, windowMs: 10 * 60 * 1000 });
     if (!rl.allowed) {
+      logRateLimitExceeded(request, ROUTE, {
+        userId: user.id,
+        limitKey: 'download',
+        limit: 30,
+        resetInMs: rl.resetInMs,
+      });
       return NextResponse.json({ error: 'Download limit exceeded. Please wait a moment.' }, { status: 429 });
     }
 
@@ -86,7 +111,8 @@ export async function POST(request: NextRequest) {
     }
 
     // Strict IDOR Prevention: Verify that generationId exists and belongs to the authenticated user
-    const { data: generation, error: genError } = await supabase
+    const serviceClient = await createServiceClient();
+    const { data: generation, error: genError } = await serviceClient
       .from('generations')
       .select('tailored_resume, cover_letter, user_id')
       .eq('id', generationId)
@@ -94,6 +120,23 @@ export async function POST(request: NextRequest) {
       .single();
 
     if (genError || !generation) {
+      const ip = getClientIp(request.headers);
+      const signal = recordSuspiciousSignal(ip, 'IDOR_PROBE');
+      logSecurityEvent({
+        eventType: signal.escalated ? 'TRAFFIC_ANOMALY' : 'SECURITY_VIOLATION',
+        severity: signal.escalated ? 'critical' : 'warn',
+        route: ROUTE,
+        method: request.method,
+        ip,
+        userId: user.id,
+        userAgent: request.headers.get('user-agent'),
+        requestId: getRequestId(request.headers),
+        statusCode: 404,
+        details: {
+          violation: 'UNOWNED_OR_MISSING_GENERATION_ACCESS',
+          attemptCount10m: signal.count,
+        },
+      });
       return NextResponse.json({ error: 'Generation not found or access denied.' }, { status: 404 });
     }
 
@@ -124,7 +167,7 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error('download error:', error);
+    logApiError(request, ROUTE, error, { userId, statusCode: 500 });
     return NextResponse.json({ error: 'Failed to generate file.' }, { status: 500 });
   }
 }

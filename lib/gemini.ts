@@ -1,9 +1,10 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { requireServerEnv } from '@/lib/env';
 
 // Lazy singleton — instantiated at request time, not at module evaluation / build time
 let _genAI: GoogleGenerativeAI | null = null;
 function getGenAI(): GoogleGenerativeAI {
-  if (!_genAI) _genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+  if (!_genAI) _genAI = new GoogleGenerativeAI(requireServerEnv('GEMINI_API_KEY'));
   return _genAI;
 }
 

@@ -1,3 +1,5 @@
+import { getClientIp } from './securityLogger';
+
 /**
  * Simple in-memory sliding-window rate limiter.
  * Works perfectly for a single Next.js process (dev + single-instance prod).
@@ -67,7 +69,6 @@ export function rateLimit(key: string, options: RateLimitOptions): RateLimitResu
 
 /** Derive a stable key from a Next.js request (IP + optional path suffix) */
 export function getRateLimitKey(request: Request, suffix = ''): string {
-  const forwarded = request.headers.get('x-forwarded-for');
-  const ip = forwarded ? forwarded.split(',')[0].trim() : 'unknown';
+  const ip = getClientIp(request.headers);
   return `${ip}${suffix}`;
 }

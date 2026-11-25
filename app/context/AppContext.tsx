@@ -50,6 +50,7 @@ function AppActionsProvider({ children }: { children: React.ReactNode }) {
   const loopCountRef = useRef(0);
 
   const handleLogout = useCallback(async () => {
+    await fetch('/api/auth/signout', { method: 'POST' }).catch(() => {});
     await supabase.auth.signOut();
     setResumeFile(null); setJdText(''); setCurrentView('workspace'); setAppState('desk');
   }, [supabase, setResumeFile, setJdText, setCurrentView, setAppState]);
